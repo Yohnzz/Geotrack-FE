@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Smartphone, Route, Navigation, BatteryMedium, Pencil, Check, Play, Pause, Square, CalendarDays, Wifi, Footprints, Clock3, Send, ShieldCheck, Bell, History, MessageSquare, LocateFixed, ExternalLink, MapPinOff, MapPin } from 'lucide-react';
+import { Smartphone, Route, Navigation, BatteryMedium, Pencil, Check, Play, Pause, Square, CalendarDays, Wifi, Footprints, Clock3, Send, ShieldCheck, Bell, History, LocateFixed, ExternalLink, MapPinOff, MapPin } from 'lucide-react';
 import { useStore } from '../store.jsx';
 import { useLivePositions, pathKm, usePlace, useMyLocation, haversineKm, coord, mapsUrl, routeUrl, fmtDateTime } from '../services/gpsService.js';
 import { hasPos, validCoord } from '../services/geo.js';
@@ -355,14 +355,21 @@ export function Notifications() {
   const { db, me } = useStore();
   const admin = me.role === 'admin';
   const mineIds = db.devices.filter(d => d.ownerId === me.id).map(d => d.id);
+  const usersById = new Map(db.users.map(user => [user.id, user]));
   const items = [
-    ...db.devices.filter(d => d.battery != null && d.battery < 20 && (admin || mineIds.includes(d.id))).map(d => ({ k: 'b' + d.id, tone: 'red', icon: BatteryMedium, t: 'Baterai rendah', p: `${d.label} tersisa ${d.battery}%.` })),
-    ...(admin ? db.tickets.filter(t => t.status === 'Baru').map(t => ({ k: t.id, tone: 'orange', icon: Bell, t: 'Pengaduan baru', p: t.title }))
+    ...db.devices.filter(d => d.battery != null && d.battery < 20 && (admin || mineIds.includes(d.id))).map(d => ({
+      k: 'b' + d.id, tone: 'red', icon: BatteryMedium, t: 'Baterai rendah',
+      p: `${d.label} tersisa ${d.battery}%.`, mode: admin ? usersById.get(d.ownerId)?.mode : null,
+    })),
+    ...(admin ? db.tickets.filter(t => t.status === 'Baru').map(t => ({
+      k: t.id, tone: 'orange', icon: Bell, t: 'Pengaduan baru', p: t.title,
+      mode: usersById.get(t.userId)?.mode,
+    }))
       : db.tickets.filter(t => t.userId === me.id && t.reply).map(t => ({ k: t.id, tone: 'blue', icon: ShieldCheck, t: 'Pengaduan ditanggapi', p: t.reply }))),
   ];
   return <><div className="notification-head"><div><h2>Notifikasi</h2><p>{items.length} pemberitahuan</p></div></div>
     <div className="notification-list">{items.length === 0 && <Empty title="Tidak ada notifikasi" text="Semua aman." />}
-      {items.map(n => <div className="notification-item unread" key={n.k}><div className={`notification-icon ${n.tone}`}><n.icon size={18} /></div><div className="notification-copy"><b>{n.t}</b><p>{n.p}</p></div></div>)}</div></>;
+      {items.map(n => <div className="notification-item unread" key={n.k}><div className={`notification-icon ${n.tone}`}><n.icon size={18} /></div><div className="notification-copy"><b>{n.t}</b>{n.mode && <small>Mode {n.mode}</small>}<p>{n.p}</p></div></div>)}</div></>;
 }
 
 // ================= HALAMAN GABUNGAN (agar sidebar ringkas) =================
@@ -371,7 +378,4 @@ export const RunningPage = ({ tab }) => <Tabs initial={tab} tabs={[
   { id: 'riwayat', label: 'Riwayat', icon: History, node: <RunningHistory /> },
 ]} />;
 
-export const Help = ({ tab }) => <Tabs initial={tab} tabs={[
-  { id: 'bantuan', label: 'Pengaduan', icon: MessageSquare, node: <Service /> },
-  { id: 'notif', label: 'Notifikasi', icon: Bell, node: <Notifications /> },
-]} />;
+export const Help = () => <Service />;

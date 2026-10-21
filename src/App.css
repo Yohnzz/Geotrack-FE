@@ -2452,27 +2452,10 @@ td b {
   margin-bottom: 28px
 }
 
-.login-map {
-  height: 245px;
-  position: relative;
-  filter: drop-shadow(0 12px 35px #0206173a)
-}
-
-.login-map .map-panel {
-  height: 100%;
-  margin: 0;
-  border: 5px solid #ffffff20;
-  border-radius: 15px
-}
-
-.login-map .map-attribution {
-  display: none
-}
-
 .login-foot {
   display: flex;
   gap: 22px;
-  margin-top: 19px;
+  margin-top: 15px;
   color: #bfdbfe;
   font-size: 10px
 }
@@ -2607,7 +2590,18 @@ td b {
 .login-form>.btn {
   width: 100%;
   height: 42px;
-  font-size: 11px
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center
+}
+
+.login-button-content {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  line-height: 1
 }
 
 .demo-note {
@@ -3191,10 +3185,6 @@ td b {
 
   .login-heading p {
     font-size: 11px
-  }
-
-  .login-options {
-    margin-bottom: 18px
   }
 
   .login-form>label input {

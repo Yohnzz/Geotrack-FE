@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { LayoutDashboard, Smartphone, Package, History, Footprints, MapPin, MessageSquare, Users, Link2, LogOut, Menu, Navigation, X, ArrowRight, Bell, ShieldCheck, Wifi, CarFront, ReceiptText, MapPinned, LifeBuoy, Eye, EyeOff } from 'lucide-react';
+import { LayoutDashboard, Smartphone, History, Footprints, MapPin, MessageSquare, Users, Link2, LogOut, Menu, Navigation, X, ArrowRight, Bell, ShieldCheck, Wifi, CarFront, ReceiptText, MapPinned, LifeBuoy, Eye, EyeOff } from 'lucide-react';
 import { configured } from './services/supabase.js';
 import './App.css';
 import { StoreProvider, useStore } from './store.jsx';
@@ -18,6 +18,7 @@ const adminPages = {
   tracking: ['Lokasi & Titik', MapPinned, A.AdminLocation, 'LAPORAN', 'Peta dan titik per titik semua device'],
   tickets: ['Pengaduan User', MessageSquare, A.AdminTickets, 'OPERASIONAL', 'Tinjau dan tanggapi pengaduan'],
   history: ['History Aktivitas', History, A.AdminHistory, 'OPERASIONAL', 'Catatan aktivitas sistem'],
+  notifications: ['Notifikasi', Bell, U.Notifications, 'NOTIFIKASI', 'Pemberitahuan device dan aktivitas user'],
 };
 // Menu user sengaja ringkas; fitur lain dijadikan tab di dalam halamannya.
 const userPages = mode => ({
@@ -29,6 +30,7 @@ const userPages = mode => ({
         location: ['Lokasi', MapPin, U.UserLocation, 'MENU', 'Peta, titik per titik, dan riwayat jalur'] }),
   device: ['Device Saya', Smartphone, U.UserDevice, 'MENU', 'Lihat, temukan, dan kelola perangkat Anda'],
   help: ['Bantuan', LifeBuoy, U.Help, 'MENU', 'Kirim pengaduan dan lihat notifikasi'],
+  notifications: ['Notifikasi', Bell, U.Notifications, 'NOTIFIKASI', 'Pemberitahuan device dan pengaduan'],
 });
 const pagesFor = me => me.role === 'admin' ? adminPages : userPages(me.mode);
 
@@ -52,7 +54,7 @@ function Login() {
           style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', display: 'grid', placeItems: 'center', width: 30, height: 30, padding: 0, border: 0, borderRadius: 6, background: 'transparent', color: '#64748b', cursor: 'pointer' }}>
           {showPw ? <EyeOff size={18} /> : <Eye size={18} />}</button></div></label>
       {err && <p style={{ color: '#dc2626', fontSize: 11, margin: 0 }}>{err}</p>}
-      <Button type="submit">{busy ? 'Memeriksa…' : 'Masuk ke GeoTrack'} <ArrowRight size={16} /></Button>
+      <Button type="submit"><span className="login-button-content">{busy ? 'Memeriksa…' : 'Masuk ke GeoTrack'} <ArrowRight size={16} /></span></Button>
     </form></div></div>;
 }
 
@@ -78,7 +80,10 @@ function Shell() {
   if (!me) return <Login />;
   const pages = pagesFor(me), cur = pages[page] ? page : 'dashboard';
   const [title, , Page, , sub] = pages[cur];
-  const groups = Object.entries(pages).reduce((g, [id, v]) => ((g[v[3]] ||= []).push([id, v]), g), {});
+  const groups = Object.entries(pages).reduce((g, [id, v]) => {
+    if (id !== 'notifications') (g[v[3]] ||= []).push([id, v]);
+    return g;
+  }, {});
   const go = (id, t = null) => { setPage(id); setTab(t); setOpen(false); }; // t = tab yang dibuka di halaman tujuan
   const ModeIcon = me.mode === 'Rental' ? CarFront : Footprints;
   return <div className={`app-shell ${me.mode === 'Running' ? 'theme-running' : 'theme-rental'}`}>
@@ -96,7 +101,7 @@ function Shell() {
       <header className="topbar"><button className="menu-toggle" onClick={() => setOpen(true)}><Menu size={21} /></button>
         <div className="top-title"><h1>{title}</h1><p>{sub}</p></div>
         <div className="top-actions"><div className="connection-pill"><span /> {live ? 'Realtime aktif' : 'Menghubungkan…'}</div>
-          {me.role === 'user' && <button className="icon-button notification-button" onClick={() => go('help', 'notif')}><Bell size={18} /><i /></button>}<div className="top-avatar">{me.name.slice(0, 2).toUpperCase()}</div></div></header>
+          <button className="icon-button notification-button" aria-label="Buka notifikasi" title="Notifikasi" onClick={() => go('notifications')}><Bell size={18} /><i /></button><div className="top-avatar">{me.name.slice(0, 2).toUpperCase()}</div></div></header>
       <main className="page-content"><Page key={`${cur}:${tab || ''}`} go={go} tab={tab} /></main>
       {confirm && <ConfirmModal {...confirm} onClose={dismissConfirm} onConfirm={resolveConfirm} />}
       <footer className="app-footer"><span>© 2026 GeoTrack</span><button onClick={() => (me.role === 'admin' ? go('tickets') : go('help'))}>Pusat bantuan</button></footer>
