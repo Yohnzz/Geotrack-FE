@@ -77,12 +77,20 @@ textarea:focus-visible {
 .brand-mark {
   height: 39px;
   width: 39px;
-  display: grid;
-  place-items: center;
-  color: #fff;
-  background: var(--blue);
+  display: block;
+  position: relative;
+  flex: 0 0 39px;
+  overflow: hidden;
   border-radius: 12px;
-  box-shadow: 0 4px 10px #2563eb2b
+}
+
+.brand-mark img {
+  position: absolute;
+  width: 87px;
+  height: 87px;
+  max-width: none;
+  left: -24px;
+  top: -15px
 }
 
 .sidebar-brand b,
@@ -2407,10 +2415,6 @@ td b {
   z-index: 1
 }
 
-.brand-light .brand-mark {
-  background: #3b82f6
-}
-
 .brand-light b {
   color: #fff
 }
@@ -3213,11 +3217,6 @@ td b {
 }
 
 /* Tema per mode: Rental = biru (default), Running = hijau */
-.theme-running .brand-mark {
-  background: #16a34a;
-  box-shadow: 0 4px 10px #16a34a2b
-}
-
 .theme-running .nav-item.active {
   background: #f0fdf4;
   color: #15803d
@@ -3306,11 +3305,6 @@ td b {
   padding: 24px;
   text-align: center;
   color: #0f172a
-}
-
-.splash .brand-mark {
-  background: #2563eb;
-  color: #fff
 }
 
 .splash p {

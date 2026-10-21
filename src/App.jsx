@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { LayoutDashboard, Smartphone, History, Footprints, MapPin, MessageSquare, Users, Link2, LogOut, Menu, Navigation, X, ArrowRight, Bell, ShieldCheck, Wifi, CarFront, ReceiptText, MapPinned, LifeBuoy, Eye, EyeOff } from 'lucide-react';
+import { LayoutDashboard, Smartphone, History, Footprints, MapPin, MessageSquare, Users, Link2, LogOut, Menu, X, ArrowRight, Bell, ShieldCheck, Wifi, CarFront, ReceiptText, MapPinned, LifeBuoy, Eye, EyeOff } from 'lucide-react';
 import { configured } from './services/supabase.js';
 import './App.css';
 import { StoreProvider, useStore } from './store.jsx';
@@ -39,13 +39,13 @@ function Login() {
   const [email, setEmail] = useState(''), [pw, setPw] = useState(''), [err, setErr] = useState(''), [busy, setBusy] = useState(false), [showPw, setShowPw] = useState(false);
   return <div className="login-screen">
     <div className="login-art">
-      <div className="brand brand-light"><div className="brand-mark"><Navigation size={21} /></div><div><b>GeoTrack</b><small>GPS Monitoring System</small></div></div>
+      <div className="brand brand-light"><div className="brand-mark"><img src="/geotrack-logo.png" alt="" /></div><div><b>GeoTrack</b><small>GPS Monitoring System</small></div></div>
       <div className="login-art-copy"><span className="eyebrow">SMART GPS MONITORING</span><h1>Setiap perjalanan,<br /><em>lebih terpantau.</em></h1>
         <p>Pantau perangkat, jelajahi riwayat perjalanan, dan kelola aktivitas GPS dalam satu dashboard.</p>
         <div className="login-foot"><span><ShieldCheck size={15} /> Pemantauan terpusat</span><span><Wifi size={15} /> Data perangkat</span></div></div>
     </div>
     <div className="login-side"><form className="login-form" onSubmit={async e => { e.preventDefault(); setBusy(true); setErr(await login(email, pw)); setBusy(false); }}>
-      <div className="brand brand-dark"><div className="brand-mark"><Navigation size={20} /></div><div><b>GeoTrack</b><small>GPS Monitoring System</small></div></div>
+      <div className="brand brand-dark"><div className="brand-mark"><img src="/geotrack-logo.png" alt="" /></div><div><b>GeoTrack</b><small>GPS Monitoring System</small></div></div>
       <div className="login-heading"><h2>Selamat datang</h2><p>Masuk dengan akun dari administrator. Tampilan menyesuaikan mode akun Anda.</p></div>
       <label>Email atau username<input required autoComplete="username" value={email} onChange={e => setEmail(e.target.value)} placeholder="nama@email.com" /></label>
       <label>Password<div style={{ position: 'relative' }}>
@@ -59,7 +59,7 @@ function Login() {
 }
 
 function Splash({ title, text, action }) {
-  return <div className="splash"><div className="brand-mark"><Navigation size={22} /></div><h2>{title}</h2>{text && <p>{text}</p>}{action}</div>;
+  return <div className="splash"><div className="brand-mark"><img src="/geotrack-logo.png" alt="" /></div><h2>{title}</h2>{text && <p>{text}</p>}{action}</div>;
 }
 
 function Shell() {
@@ -88,7 +88,7 @@ function Shell() {
   const ModeIcon = me.mode === 'Rental' ? CarFront : Footprints;
   return <div className={`app-shell ${me.mode === 'Running' ? 'theme-running' : 'theme-rental'}`}>
     <aside className={`sidebar ${open ? 'sidebar-open' : ''}`}>
-      <div className="sidebar-brand"><div className="brand-mark"><Navigation size={20} /></div><div><b>GeoTrack</b><small>{me.role === 'admin' ? 'Administrator Panel' : 'GPS Monitoring System'}</small></div>
+      <div className="sidebar-brand"><div className="brand-mark"><img src="/geotrack-logo.png" alt="" /></div><div><b>GeoTrack</b><small>{me.role === 'admin' ? 'Administrator Panel' : 'GPS Monitoring System'}</small></div>
         <button className="close-mobile" onClick={() => setOpen(false)}><X size={18} /></button></div>
       {me.role === 'user' && <div className="workspace-switch"><div className="workspace-icon"><ModeIcon size={16} /></div><div><b>Mode {me.mode}</b><small>Diatur oleh administrator</small></div></div>}
       <nav className="side-nav">{Object.entries(groups).map(([g, items]) => <div key={g}>{Object.keys(groups).length > 1 && <div className="nav-section">{g}</div>}
