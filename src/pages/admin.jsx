@@ -17,17 +17,18 @@ const autoDeviceCode = () => {
 
 export function AdminDashboard() {
   const { db, me } = useStore();
-  const sold = db.devices.filter(d => d.sale === 'Terjual').length;
-  const live = useLivePositions(db.devices);
-  const low = db.devices.filter(d => d.battery != null && d.battery < 20);
-  const people = db.users.filter(u => u.role === 'user');
+  const sold = (db?.devices || []).filter(d => d.sale === 'Terjual').length;
+  const live = useLivePositions(db?.devices || []);
+  const low = (db?.devices || []).filter(d => d.battery != null && d.battery < 20);
+  const people = (db?.users || []).filter(u => u?.role === 'user');
+  const devLen = db?.devices?.length || 0;
   return <>
-    <div className="page-welcome"><div><div className="eyebrow">ADMIN OVERVIEW</div><h2>Selamat datang, {me.name} <span>👋</span></h2><p>Pantau user, perangkat, dan penjualan GeoTrack.</p></div></div>
+    <div className="page-welcome"><div><div className="eyebrow">ADMIN OVERVIEW</div><h2>Selamat datang, {me?.name || 'Admin'} <span>👋</span></h2><p>Pantau user, perangkat, dan penjualan GeoTrack.</p></div></div>
     <div className="stats-grid">
       <Stat icon={Users} label="Total User" value={people.length} detail={`${people.filter(u => u.mode === 'Rental').length} Rental · ${people.filter(u => u.mode === 'Running').length} Running`} />
-      <Stat icon={Smartphone} label="Total Device" value={db.devices.length} detail={`${sold} terjual · ${db.devices.filter(d => d.online).length} online`} tone="violet" />
-      <Stat icon={Package} label="Device Tersedia" value={db.devices.length - sold} detail="Siap dijual" tone="green" />
-      <Stat icon={MessageSquare} label="Pengaduan Aktif" value={db.tickets.filter(t => t.status !== 'Selesai').length} detail="Perlu ditinjau" tone="orange" />
+      <Stat icon={Smartphone} label="Total Device" value={devLen} detail={`${sold} terjual · ${(db?.devices || []).filter(d => d.online).length} online`} tone="violet" />
+      <Stat icon={Package} label="Device Tersedia" value={devLen - sold} detail="Siap dijual" tone="green" />
+      <Stat icon={MessageSquare} label="Pengaduan Aktif" value={(db?.tickets || []).filter(t => t.status !== 'Selesai').length} detail="Perlu ditinjau" tone="orange" />
     </div>
     <Panel title="Lokasi Semua Perangkat" sub="Posisi terakhir dari data GPS"><MapPanel devices={live} /></Panel>
     <Panel title="Baterai Rendah" sub="Device dengan baterai di bawah 20%">
@@ -46,11 +47,11 @@ export function AdminUsers() {
     <div className="toolbar"><div /><Button icon={Plus} onClick={() => setF(blank)}>Tambah User</Button></div>
     {db.users.length === 0 ? <Empty title="Belum ada user" text="Tambahkan user pertama." /> :
       <Table head={['NAMA', 'EMAIL', 'ROLE / MODE', 'DEVICE', '']}>
-        {db.users.map(u => <tr key={u.id}><td><div className="table-primary"><span className="user-table-avatar">{u.name.slice(0, 2).toUpperCase()}</span><span><b>{u.name}</b><small>@{u.username}{u.phone ? ` · ${u.phone}` : ''}</small></span></div></td><td>{u.email}</td>
+        {db.users.map(u => <tr key={u.id}><td><div className="table-primary"><span className="user-table-avatar">{(u?.name || u?.username || 'U').slice(0, 2).toUpperCase()}</span><span><b>{u?.name || u?.username || 'User'}</b><small>@{u?.username}{u?.phone ? ` · ${u?.phone}` : ''}</small></span></div></td><td>{u.email}</td>
           <td>{u.role === 'admin' ? <Badge tone="blue">Admin</Badge> : <Badge tone={modeTone(u.mode)}>{u.mode}</Badge>}</td>
           <td>{db.devices.filter(d => d.ownerId === u.id).map(d => d.name).join(', ') || '—'}</td>
           <td><button className="row-action" onClick={() => setF({ ...u, password: '' })}><Pencil size={15} /></button>
-            {u.id !== me.id && <button className="row-action" onClick={() => askConfirm({ title: 'Hapus user?', text: `Hapus ${u.name}? Listing, riwayat running, dan akses loginnya ikut terhapus.`, confirmText: 'Hapus user', danger: true, onConfirm: () => deleteUser(u.id) })}><Trash2 size={15} /></button>}</td></tr>)}
+            {u.id !== me?.id && <button className="row-action" onClick={() => askConfirm({ title: 'Hapus user?', text: `Hapus ${u?.name || 'user'}? Listing, riwayat running, dan akses loginnya ikut terhapus.`, confirmText: 'Hapus user', danger: true, onConfirm: () => deleteUser(u.id) })}><Trash2 size={15} /></button>}</td></tr>)}
       </Table>}
     {f && <Modal title={f.id ? 'Edit User' : 'Tambah User'} onClose={() => setF(null)}>
       <form className="modal-form" onSubmit={submit}>
@@ -59,7 +60,7 @@ export function AdminUsers() {
         <Field label="Email"><input required type="email" value={f.email} onChange={e => setF({ ...f, email: e.target.value })} /></Field>
         <Field label={f.id ? 'Password baru (kosongkan jika tidak diubah)' : 'Password (min. 6 karakter)'}><input type="text" autoComplete="new-password" required={!f.id} minLength={f.password ? 6 : undefined} value={f.password} onChange={e => setF({ ...f, password: e.target.value })} /></Field>
         <Field label="Telepon"><input value={f.phone} onChange={e => setF({ ...f, phone: e.target.value })} /></Field>
-        <Field label="Role"><select value={f.role} disabled={f.id === me.id} onChange={e => setF({ ...f, role: e.target.value })}><option value="user">User</option><option value="admin">Admin</option></select></Field>
+        <Field label="Role"><select value={f.role} disabled={f.id === me?.id} onChange={e => setF({ ...f, role: e.target.value })}><option value="user">User</option><option value="admin">Admin</option></select></Field>
         {f.role === 'user' && <Field label="Mode akun"><select value={f.mode || 'Running'} onChange={e => setF({ ...f, mode: e.target.value })}><option value="Running">Running — pelacak lari</option><option value="Rental">Rental — menyewakan alat GPS</option></select></Field>}
         <div className="modal-actions"><Button variant="outline" onClick={() => setF(null)}>Batal</Button><Button type="submit">Simpan</Button></div>
       </form></Modal>}
@@ -70,7 +71,7 @@ function KeyBox({ id }) {
   const { deviceKey } = useStore();
   const [k, setK] = useState('');
   useEffect(() => { deviceKey(id).then(setK); }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
-  return <div className="assign-info" style={{ wordBreak: 'break-all' }}><KeyRound size={13} style={{ verticalAlign: -2 }} /> Kunci ESP32 (rahasia): <b>{k || '…'}</b></div>;
+  return <div className="assign-info" style={{ wordBreak: 'break-all' }}><KeyRound size={13} style={{ verticalAlign: -2 }} /> Kunci GioT (rahasia): <b>{k || '…'}</b></div>;
 }
 
 export function AdminDevices() {
@@ -98,12 +99,12 @@ export function AdminDevices() {
   };
   return <>
     <div className="toolbar"><div /><Button icon={Plus} onClick={() => setF({ code: autoDeviceCode(), name: '', notes: '' })}>Tambah Device</Button></div>
-    {db.devices.length === 0 ? <Empty title="Belum ada device" text="Tambahkan device, lalu isi kode dan kuncinya di firmware ESP32." /> :
+    {db.devices.length === 0 ? <Empty title="Belum ada device" text="Tambahkan device, lalu isi kode dan kuncinya di firmware GioT." /> :
       <Table head={['DEVICE', 'PEMILIK', 'KONEKSI', 'BATERAI', 'PENJUALAN', '']}>
         {db.devices.map(d => <tr key={d.id}><td><div className="table-primary"><span className="table-device-icon"><Smartphone size={17} /></span><span><b>{d.name}</b><small>{d.code}</small></span></div></td><td>{owner(d.ownerId)}</td>
           <td><Badge tone={d.online ? 'green' : 'red'}>{d.online ? 'Online' : 'Offline'}</Badge></td><td>{d.battery != null ? `${d.battery}%` : '—'}</td>
           <td><Badge tone={d.sale === 'Terjual' ? 'blue' : 'gray'}>{d.sale}</Badge></td>
-          <td><button className="row-action" title="Lihat konfigurasi ESP32" onClick={() => showEspConfig(d)}><Eye size={15} /></button>
+          <td><button className="row-action" title="Lihat konfigurasi GioT" onClick={() => showEspConfig(d)}><Eye size={15} /></button>
             <button className="row-action" title="Edit device" onClick={() => setF({ ...d })}><Pencil size={15} /></button>
             <button className="row-action" onClick={() => askConfirm({ title: 'Hapus device?', text: `Hapus ${d.name}? Seluruh data GPS-nya ikut terhapus.`, confirmText: 'Hapus device', danger: true, onConfirm: () => deleteDevice(d.id) })}><Trash2 size={15} /></button></td></tr>)}
       </Table>}
@@ -116,9 +117,9 @@ export function AdminDevices() {
       </form></Modal>}
     {created && <Modal title="Device berhasil ditambahkan" onClose={() => { setCreated(null); setCopied(''); }}>
       <div className="device-created">
-        <div className="device-created-title"><CircleCheck size={27} /><div><b>ID device siap dipakai</b><small>Salin konfigurasi ini ke ESP32 Anda.</small></div></div>
+        <div className="device-created-title"><CircleCheck size={27} /><div><b>ID device siap dipakai</b><small>Salin konfigurasi ini ke GioT Anda.</small></div></div>
         <div className="device-id-box"><small>ID DEVICE</small><strong>{created.code}</strong></div>
-        <div className="assign-info"><Info size={14} /> ID dan kunci harus sama persis dengan konfigurasi firmware agar ESP32 dapat mengirim titik GPS.</div>
+        <div className="assign-info"><Info size={14} /> ID dan kunci harus sama persis dengan konfigurasi firmware agar GioT dapat mengirim titik GPS.</div>
         <div className="firmware-box"><small>Arduino — config.h</small><code>{`#define DEVICE_CODE "${created.code}"\n#define DEVICE_KEY "${created.key || 'ambil dari Edit Device'}"`}</code><small>MicroPython — boot.py</small><code>{`DEVICE_CODE = "${created.code}"\nDEVICE_KEY = "${created.key || 'ambil dari Edit Device'}"`}</code></div>
         <div className="modal-actions"><Button variant="outline" icon={copied === 'id' ? Check : Copy} onClick={() => copy(created.code, 'id')}>{copied === 'id' ? 'ID tersalin' : 'Salin ID'}</Button><Button icon={copied === 'config' ? Check : Copy} onClick={() => copy(`#define DEVICE_CODE "${created.code}"\n#define DEVICE_KEY "${created.key}"`, 'config')}>{copied === 'config' ? 'Konfigurasi tersalin' : 'Salin config.h'}</Button></div>
       </div>
@@ -130,9 +131,9 @@ export function AdminAssign() {
   const { db, assign, askConfirm } = useStore();
   const blank = { deviceId: '', userId: '', price: '', date: new Date().toISOString().slice(0, 10), method: 'Transfer', note: '' };
   const [f, setF] = useState(blank);
-  const free = db.devices.filter(d => d.sale === 'Tersedia');
-  const users = db.users.filter(u => u.role === 'user');
-  const sold = db.devices.filter(d => d.ownerId);
+  const free = (db?.devices || []).filter(d => d.sale === 'Tersedia');
+  const users = (db?.users || []).filter(u => u?.role === 'user');
+  const sold = (db?.devices || []).filter(d => d.ownerId);
   const picked = users.find(u => u.id === f.userId);
   return <>
     <div className="assign-intro panel"><div className="assign-intro-icon"><Link2 size={20} /></div><div><h3>Jual & hubungkan device ke user</h3><p>Mode (Running/Rental) ditentukan saat akun dibuat. Device yang dihubungkan akan muncul di dashboard user tersebut.</p></div></div>

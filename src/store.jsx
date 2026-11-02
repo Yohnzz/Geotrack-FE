@@ -8,6 +8,10 @@ import {
   useState
 } from 'react';
 import { supabase } from './services/supabase.js';
+import { Capacitor, registerPlugin } from '@capacitor/core';
+import { Network } from '@capacitor/network';
+
+const WifiHelper = registerPlugin('WifiHelper');
 
 // Semua data berasal dari Supabase. Hak akses dijaga oleh Row Level Security di database:
 // - admin: semua data · user: hanya data miliknya · mode (Rental/Running) diatur admin.
@@ -60,6 +64,101 @@ export function StoreProvider({ children }) {
   const meRef = useRef(null);
   const purchasesOk = useRef(false); // tabel purchases ada (supabase/laporan_pembelian.sql sudah dijalankan)
   const [purchasesReady, setPurchasesReady] = useState(false);
+  const [hasInternet, setHasInternet] = useState(true);
+
+  // Periksa koneksi internet sebenarnya (bukan hanya Wi-Fi lokal GioT)
+  const checkInternet = useCallback(async () => {
+    // 1. Jika browser / OS menyatakan offline secara eksplisit
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      setHasInternet(false);
+      return false;
+    }
+
+    // 2. Periksa status jaringan via Capacitor Network jika ada di platform native Android
+    try {
+      if (Capacitor.isNativePlatform()) {
+        const netStatus = await Network.getStatus();
+        // Bila user sedang memakai paket data seluler aktif (cellular), PASTI ada internet
+        if (netStatus.connected && netStatus.connectionType === 'cellular') {
+          setHasInternet(true);
+          return true;
+        }
+        // Jika tidak tersambung ke jaringan manapun
+        if (!netStatus.connected || netStatus.connectionType === 'none') {
+          setHasInternet(false);
+          return false;
+        }
+      }
+    } catch {
+      // lanjut ke probe jika Capacitor Network gagal
+    }
+
+    // 3. Cek apakah perangkat terhubung langsung ke Hotspot GioT lokal (192.168.4.2 / 192.168.4.1)
+    let espReachable = false;
+    if (Capacitor.isNativePlatform()) {
+      for (const host of ['http://192.168.4.2', 'http://192.168.4.1']) {
+        try {
+          const res = await WifiHelper.fetchWifi({ url: `${host}/api/status`, timeout: 1200 });
+          if (res && res.ok) {
+            espReachable = true;
+            break;
+          }
+        } catch {}
+      }
+    }
+    if (!espReachable) {
+      for (const host of ['http://192.168.4.2', 'http://192.168.4.1']) {
+        try {
+          const espCtrl = new AbortController();
+          const espT = setTimeout(() => espCtrl.abort(), 1200);
+          const espRes = await fetch(`${host}/api/status`, {
+            signal: espCtrl.signal,
+            cache: 'no-store'
+          });
+          clearTimeout(espT);
+          if (espRes.ok || (espRes.status >= 200 && espRes.status < 500)) {
+            espReachable = true;
+            break;
+          }
+        } catch {
+          // coba host berikutnya
+        }
+      }
+    }
+
+    // 4. Cek akses internet luar ke Supabase (server resmi aplikasi kita)
+    try {
+      const controller = new AbortController();
+      const t = setTimeout(() => controller.abort(), 3500);
+      const res = await fetch(`${supabase.supabaseUrl}/rest/v1/`, {
+        method: 'HEAD',
+        headers: { apikey: supabase.supabaseKey },
+        signal: controller.signal,
+        cache: 'no-store'
+      });
+      clearTimeout(t);
+      if (res.ok || res.status < 500) {
+        setHasInternet(true);
+        return true;
+      }
+    } catch {
+      // Jika Supabase tidak terjangkau:
+      // Bila tersambung ke GioT, berarti user sedang di Wi-Fi alat tanpa internet!
+      if (espReachable) {
+        setHasInternet(false);
+        return false;
+      }
+    }
+
+    // Fallback: Jika navigator.onLine masih true dan bukan di GioT, pertahankan status online
+    if (typeof navigator !== 'undefined' && navigator.onLine && !espReachable) {
+      setHasInternet(true);
+      return true;
+    }
+
+    setHasInternet(false);
+    return false;
+  }, []);
 
   const toast = useCallback(
     (text, type = 'error') => setNotice({ text, type, k: Date.now() }),
@@ -100,6 +199,18 @@ export function StoreProvider({ children }) {
         console.error('GEO: getSession ERROR', e);
 
         if (mounted) {
+          try {
+            const cachedStr = localStorage.getItem('geotrack:cached_profile');
+            if (cachedStr) {
+              const cachedProf = JSON.parse(cachedStr);
+              if (cachedProf?.id) {
+                console.log('GEO: offline fallback to cached profile');
+                setSession({ user: { id: cachedProf.id, email: cachedProf.email } });
+                return;
+              }
+            }
+          } catch {}
+
           setSession(null);
           setError(e.message || 'Gagal menghubungkan ke Supabase');
         }
@@ -142,6 +253,10 @@ export function StoreProvider({ children }) {
 
     console.log('GEO: profil ditemukan', prof.data);
 
+    try {
+      localStorage.setItem('geotrack:cached_profile', JSON.stringify(prof.data));
+    } catch {}
+
     const admin = prof.data.role === 'admin';
     meRef.current = prof.data;
     const q = (t, col, asc = false) =>
@@ -170,7 +285,7 @@ export function StoreProvider({ children }) {
     purchasesOk.current = !pur.error;
     setPurchasesReady(!pur.error);
 
-    setRaw({
+    const rawData = {
       users,
       devices,
       latest: Object.fromEntries(latest.map(l => [l.device_id, l])),
@@ -180,7 +295,13 @@ export function StoreProvider({ children }) {
       tickets,
       logs,
       purchases: pur.data || []
-    });
+    };
+    try {
+      localStorage.setItem('geotrack:cached_profile', JSON.stringify(prof.data));
+      localStorage.setItem('geotrack:cached_raw', JSON.stringify(rawData));
+    } catch {}
+
+    setRaw(rawData);
     if (!admin && devices.length) {
       // jejak GPS terbaru untuk peta (hanya device milik user)
       const g = await supabase
@@ -236,13 +357,56 @@ export function StoreProvider({ children }) {
     load(session.user.id)
       .then(() => {
         setStatus('ready');
+        setHasInternet(true);
       })
       .catch(e => {
-        console.error('Gagal memuat GeoTrack:', e);
+        console.warn('Gagal memuat GeoTrack secara online:', e);
+        // Cek apakah ada profil tersimpan di cache saat offline (agar user tetap bisa akses Debug GioT)
+        try {
+          const cachedStr = localStorage.getItem('geotrack:cached_profile');
+          const cachedRawStr = localStorage.getItem('geotrack:cached_raw');
+          if (cachedStr) {
+            const cachedProf = JSON.parse(cachedStr);
+            if (cachedProf && cachedProf.id === session.user.id) {
+              meRef.current = cachedProf;
+              const cachedRaw = cachedRawStr ? JSON.parse(cachedRawStr) : null;
+              setRaw(cachedRaw || { ...EMPTY, users: [cachedProf] });
+              setStatus('ready');
+              setError('');
+              setHasInternet(false);
+              return;
+            }
+          }
+        } catch {}
+
         setError(e.message || 'Gagal memuat data');
         setStatus('error');
       });
   }, [session, load]);
+
+  // Pantau status internet real-time
+  useEffect(() => {
+    checkInternet();
+    const handleOnline = () => {
+      checkInternet().then(ok => {
+        if (ok && session?.user?.id) {
+          reload();
+        }
+      });
+    };
+    const handleOffline = () => setHasInternet(false);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    const timer = setInterval(checkInternet, 5000);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+      clearInterval(timer);
+    };
+  }, [checkInternet, reload, session?.user?.id]);
 
   // ---------- realtime ----------
   useEffect(() => {
@@ -291,17 +455,17 @@ export function StoreProvider({ children }) {
   // ---------- data turunan untuk UI ----------
   const db = useMemo(
     () => ({
-      users: raw.users.map(p => ({
+      users: (raw.users || []).map(p => ({
         id: p.id,
-        name: p.full_name,
-        username: p.username,
-        email: p.email,
+        name: p.full_name || p.username || (p.email ? p.email.split('@')[0] : 'User'),
+        username: p.username || '',
+        email: p.email || '',
         phone: p.phone || '',
-        role: p.role,
-        mode: p.mode
+        role: p.role || 'user',
+        mode: p.mode || 'Rental'
       })),
-      devices: raw.devices.map(d => {
-        const l = raw.latest[d.id];
+      devices: (raw.devices || []).map(d => {
+        const l = raw.latest ? raw.latest[d.id] : null;
         const seen = l ? new Date(l.recorded_at).getTime() : null;
         return {
           id: d.id,
@@ -330,7 +494,7 @@ export function StoreProvider({ children }) {
           updated: seen ? ago(now - seen) : ''
         };
       }),
-      listings: raw.listings.map(l => ({
+      listings: (raw.listings || []).map(l => ({
         id: l.id,
         ownerId: l.owner_id,
         deviceId: l.device_id,
@@ -341,7 +505,7 @@ export function StoreProvider({ children }) {
         pickup: l.pickup_location || '',
         status: l.status
       })),
-      requests: raw.requests.map(r => ({
+      requests: (raw.requests || []).map(r => ({
         id: r.id,
         listingId: r.listing_id,
         renterName: r.renter_name,
@@ -352,21 +516,22 @@ export function StoreProvider({ children }) {
         status: r.status,
         createdAt: r.created_at
       })),
-      runs: raw.runs.map(r => ({
+      runs: (raw.runs || []).map(r => ({
         id: r.id,
         userId: r.user_id,
         deviceId: r.device_id,
         date: fmtDate(r.started_at),
         startedAt: r.started_at,
-        distance: Number(r.distance_km),
-        duration: hms(r.duration_seconds),
-        seconds: r.duration_seconds,
+        stoppedAt: r.stopped_at || r.finished_at || (r.started_at && r.duration_seconds ? new Date(new Date(r.started_at).getTime() + Number(r.duration_seconds) * 1000).toISOString() : null),
+        distance: Number(r.distance_km || 0),
+        duration: hms(r.duration_seconds || 0),
+        seconds: r.duration_seconds || 0,
         note: r.note || '',
-        route: r.route
+        route: r.route || []
       })),
-      tickets: raw.tickets.map(t => ({
+      tickets: (raw.tickets || []).map(t => ({
         id: t.id,
-        code: t.id.slice(0, 6).toUpperCase(),
+        code: (t.id || '').slice(0, 6).toUpperCase(),
         userId: t.user_id,
         category: t.category,
         title: t.title,
@@ -375,12 +540,12 @@ export function StoreProvider({ children }) {
         reply: t.reply || '',
         createdAt: t.created_at
       })),
-      logs: raw.logs.map(l => ({
+      logs: (raw.logs || []).map(l => ({
         id: l.id,
         at: new Date(l.created_at).toLocaleString('id-ID'),
         text: `${l.actor_name || 'Sistem'}: ${l.text}`
       })),
-      purchases: raw.purchases.map(p => ({
+      purchases: (raw.purchases || []).map(p => ({
         id: p.id,
         deviceId: p.device_id,
         deviceCode: p.device_code,
@@ -400,8 +565,28 @@ export function StoreProvider({ children }) {
 
   const me = useMemo(() => {
     const p =
-      meRef.current && raw.users.find(u => u.id === meRef.current.id);
-    return p ? db.users.find(u => u.id === p.id) : null;
+      meRef.current && (raw.users || []).find(u => u.id === meRef.current.id);
+    const found = p ? db.users.find(u => u.id === p.id) : null;
+    if (found) {
+      return {
+        ...found,
+        name: found.name || meRef.current?.full_name || meRef.current?.username || 'User',
+        mode: found.mode || meRef.current?.mode || 'Rental',
+        role: found.role || meRef.current?.role || 'user'
+      };
+    }
+    if (meRef.current) {
+      return {
+        id: meRef.current.id,
+        name: meRef.current.full_name || meRef.current.username || (meRef.current.email ? meRef.current.email.split('@')[0] : 'User'),
+        username: meRef.current.username || '',
+        email: meRef.current.email || '',
+        phone: meRef.current.phone || '',
+        role: meRef.current.role || 'user',
+        mode: meRef.current.mode || 'Rental'
+      };
+    }
+    return null;
   }, [raw.users, db.users, status]); // mode dibaca dari data terbaru
 
   // ---------- aksi ----------
@@ -444,6 +629,10 @@ export function StoreProvider({ children }) {
       return e ? 'Username/email atau password salah' : '';
     },
     logout: async () => {
+      try {
+        localStorage.removeItem('geotrack:cached_profile');
+        localStorage.removeItem('geotrack:cached_raw');
+      } catch {}
       const { error: e } = await supabase.auth.signOut();
       if (e) { toast(e.message); return false; }
       toast('Anda berhasil keluar dari GeoTrack.', 'ok');
@@ -667,24 +856,36 @@ export function StoreProvider({ children }) {
       if (ok) log(`${st} permintaan sewa`);
       return ok;
     },
-    saveRun: r =>
-      act(
-        () =>
-          r.id
-            ? supabase.from('runs').update({ note: nz(r.note) }).eq('id', r.id)
-            : supabase
-              .from('runs')
-              .insert({
-                user_id: meRef.current.id,
-                device_id: nz(r.deviceId),
-                distance_km: Number(r.distance),
-                duration_seconds: r.seconds,
-                note: nz(r.note),
-                route: r.route || [],
-                started_at: r.startedAt
-              }),
+    saveRun: async r => {
+      const safeDistance = Math.max(0, Math.min(9999.99, Number(parseFloat(r.distance).toFixed(2)) || 0));
+      const safeSeconds = Math.max(0, Math.min(2147483647, Math.floor(Number(r.seconds) || 0)));
+      return act(
+        async () => {
+          if (r.id) {
+            return supabase.from('runs').update({ note: nz(r.note) }).eq('id', r.id);
+          }
+          const payload = {
+            user_id: meRef.current.id,
+            device_id: nz(r.deviceId),
+            distance_km: safeDistance,
+            duration_seconds: safeSeconds,
+            note: nz(r.note),
+            route: r.route || [],
+            started_at: r.startedAt || new Date().toISOString()
+          };
+          if (r.stoppedAt) {
+            payload.stopped_at = r.stoppedAt;
+          }
+          const res = await supabase.from('runs').insert(payload);
+          if (res?.error && res.error.message?.includes('stopped_at')) {
+            delete payload.stopped_at;
+            return supabase.from('runs').insert(payload);
+          }
+          return res;
+        },
         'Aktivitas disimpan'
-      ),
+      );
+    },
     deleteRun: id =>
       act(
         () => supabase.from('runs').delete().eq('id', id),
@@ -701,11 +902,48 @@ export function StoreProvider({ children }) {
           }),
         'Pengaduan terkirim'
       ),
+    startTrackingSession: async deviceId => {
+      try {
+        const { data, error } = await supabase.rpc('start_tracking_session', { p_device_id: deviceId });
+        if (error) {
+          console.warn('start_tracking_session RPC notice:', error.message);
+          return { ok: false, error: error.message };
+        }
+        return { ok: true, data };
+      } catch (err) {
+        return { ok: false, error: err?.message || 'Gagal memulai tracking' };
+      }
+    },
+    stopTrackingSession: async sessionId => {
+      try {
+        const { data, error } = await supabase.rpc('stop_tracking_session', { p_session_id: sessionId });
+        if (error) {
+          console.warn('stop_tracking_session RPC notice:', error.message);
+          return { ok: false, error: error.message };
+        }
+        return { ok: true, data };
+      } catch (err) {
+        return { ok: false, error: err?.message || 'Gagal menghentikan tracking' };
+      }
+    },
+    checkDeviceCommand: async commandId => {
+      try {
+        const { data, error } = await supabase
+          .from('device_commands')
+          .select('id, status, command, executed_at')
+          .eq('id', commandId)
+          .single();
+        if (error) return null;
+        return data;
+      } catch (e) {
+        return null;
+      }
+    },
   };
 
   return <Ctx.Provider
     value={{
-      db, me, status, error, live, notice, confirm, trails, purchasesReady,
+      db, me, status, error, live, notice, confirm, trails, purchasesReady, hasInternet,
       dismissNotice: () => setNotice(null),
       askConfirm: data => setConfirm(data),
       dismissConfirm: () => setConfirm(null),

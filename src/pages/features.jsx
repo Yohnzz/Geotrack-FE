@@ -184,7 +184,7 @@ async function checkDevice(d, isLive, tilesOk) {
   const every = gaps.length ? ` Mengirim tiap ±${interval(gaps[Math.floor(gaps.length / 2)])}.` : '';
   const rssi = d.signal, sig = rssi == null ? '' : ` Sinyal Wi-Fi ${rssi} dBm (${rssi >= -70 ? 'kuat' : rssi >= -85 ? 'cukup' : 'lemah'}).`;
   let koneksi;
-  if (!seen) koneksi = C('fail', 'Device belum pernah mengirim data. Periksa kode & kunci di firmware ESP32.');
+  if (!seen) koneksi = C('fail', 'Device belum pernah mengirim data. Periksa kode & kunci di firmware GioT.');
   else if (age < 120000) koneksi = C(rssi != null && rssi < -85 ? 'warn' : 'ok', `Online — data terakhir ${ago(age).toLowerCase()}.${sig}${every}`);
   else if (age < 600000) koneksi = C('warn', `Terputus sementara — data terakhir ${ago(age).toLowerCase()}.${sig}`);
   else koneksi = C('fail', `Offline — data terakhir ${ago(age).toLowerCase()}. Periksa daya dan Wi-Fi device.`);
@@ -306,12 +306,12 @@ export function AdminPurchases() {
 // Bukti pembelian milik user sendiri (tab "Pembelian" di halaman Device Saya)
 export function MyPurchases() {
   const { db, me, purchasesReady } = useStore();
-  const rows = db.purchases.filter(p => p.buyerId === me.id);
+  const rows = (db?.purchases || []).filter(p => me?.id && p.buyerId === me.id);
   const fmtD = t => new Date(t).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' });
   if (!purchasesReady) return <Empty title="Belum tersedia" text="Riwayat pembelian akan tampil setelah administrator mengaktifkan laporan pembelian." />;
   if (!rows.length) return <Empty title="Belum ada catatan pembelian" text="Pembelian device Anda akan tercatat di sini setelah administrator menghubungkan device ke akun Anda." />;
   return <>
-    <div className="print-only print-head"><h2>Bukti Pembelian GeoTrack</h2><p>{me.name} · dicetak {fmtDateTime(Date.now())}</p></div>
+    <div className="print-only print-head"><h2>Bukti Pembelian GeoTrack</h2><p>{me?.name || 'User'} · dicetak {fmtDateTime(Date.now())}</p></div>
     <div className="toolbar no-print"><div className="stats-strip" style={{ margin: 0 }}><span>Total pembelian <b>{rows.length}</b></span><span>Total nilai <b>{rupiah(rows.reduce((s, p) => s + p.price, 0))}</b></span></div>
       <Button variant="outline" icon={Printer} onClick={() => window.print()}>Cetak</Button></div>
     <Table head={['DEVICE', 'TANGGAL', 'HARGA', 'PEMBAYARAN', 'STATUS', 'CATATAN']}>

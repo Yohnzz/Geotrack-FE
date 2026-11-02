@@ -5,6 +5,7 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
 
   return {
+    base: "./", // HANYA TAMBAHKAN BARIS INI (Membuat path menjadi relatif)
     plugins: [react()],
     server: {
       host: true,

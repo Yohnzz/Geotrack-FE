@@ -1,19 +1,37 @@
-import { useEffect, useState } from 'react';
-import { Smartphone, Route, Navigation, BatteryMedium, Pencil, Check, Play, Pause, Square, CalendarDays, Wifi, Footprints, Clock3, Send, ShieldCheck, Bell, History, LocateFixed, ExternalLink, MapPinOff, MapPin } from 'lucide-react';
+import { useEffect, useState, useRef } from 'react';
+import { Smartphone, Route, Navigation, BatteryMedium, Pencil, Check, Play, Pause, Square, CalendarDays, Wifi, Footprints, Clock3, Send, ShieldCheck, Bell, History, MessageSquare, LocateFixed, ExternalLink, MapPinOff, MapPin, Trash2, RotateCcw, TriangleAlert, RefreshCw, Share } from 'lucide-react';
+import { Capacitor, registerPlugin } from '@capacitor/core';
 import { useStore } from '../store.jsx';
-import { useLivePositions, pathKm, usePlace, useMyLocation, haversineKm, coord, mapsUrl, routeUrl, fmtDateTime } from '../services/gpsService.js';
+import { useLivePositions, pathKm, usePlace, useMyLocation, haversineKm, coord, mapsUrl, routeUrl, fmtDateTime, fmtTime } from '../services/gpsService.js';
 import { hasPos, validCoord } from '../services/geo.js';
+import { supabase } from '../services/supabase.js';
 import { Badge, Button, Stat, Modal, Field, Table, Empty, MapPanel, ModeBanner, Tabs } from '../ui.jsx';
 import { LocationPage, TrackTab } from './features.jsx';
+import { ShareActivityModal } from '../ShareActivityModal.jsx';
+
+const NativeHelper = registerPlugin('WifiHelper');
 
 // Semua device milik akun (bisa lebih dari satu), diurutkan menurut nama tampilan (alias) secara natural: Avanza 2 < Avanza 10.
 const byLabel = (a, b) => a.label.localeCompare(b.label, 'id', { numeric: true });
-const useMine = () => { const s = useStore(); return { ...s, mine: s.db.devices.filter(d => d.ownerId === s.me.id).sort(byLabel) }; };
+const useMine = () => {
+  const s = useStore();
+  const mine = (s?.db?.devices || []).filter(d => s?.me?.id && d.ownerId === s.me.id).sort(byLabel);
+  return { ...s, mine };
+};
 const today = () => new Date().toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 const bat = d => (d?.battery != null ? `${d.battery}%` : '—');
 const hms = s => [s / 3600, (s % 3600) / 60, s % 60].map(n => String(Math.floor(n)).padStart(2, '0')).join(':');
 const secs = t => t.split(':').reduce((a, n) => a * 60 + Number(n), 0);
-const Welcome = ({ me, text }) => <div className="page-welcome"><div><div className="eyebrow">{`MODE ${me.mode.toUpperCase()}`}</div><h2>Halo, {me.name} <span>👋</span></h2><p>{text}</p></div><div className="date-chip"><CalendarDays size={15} /> {today()}</div></div>;
+const Welcome = ({ me, text }) => (
+  <div className="page-welcome">
+    <div>
+      <div className="eyebrow">{`MODE ${(me?.mode || 'Rental').toUpperCase()}`}</div>
+      <h2>Halo, {me?.name || me?.username || 'Pengguna'} <span>👋</span></h2>
+      <p>{text}</p>
+    </div>
+    <div className="date-chip"><CalendarDays size={15} /> {today()}</div>
+  </div>
+);
 const Head = ({ title, sub, action }) => <div className="panel-heading"><div><h3>{title}</h3>{sub && <p>{sub}</p>}</div>{action}</div>;
 
 // Nama tempat (reverse geocoding) untuk satu device; dipakai per baris daftar.
@@ -29,15 +47,15 @@ export function UserDashboard({ go }) {
   const mine = useLivePositions(mineRaw);
   const [view, setView] = useState(null), [edit, setEdit] = useState(null), [focus, setFocus] = useState(null), [fitN, setFitN] = useState(0);
   const place = usePlace(mine[0]?.lat, mine[0]?.lng);
-  const rental = me.mode === 'Rental';
+  const rental = me?.mode !== 'Running';
   const onlineN = mine.filter(d => d.online).length, located = mine.filter(hasPos).length;
   const offlineN = mine.length - onlineN;
   const lowBat = mine.filter(d => d.battery != null && d.battery < 20).length;
-  const listings = db.listings.filter(l => l.ownerId === me.id);
-  const runs = db.runs.filter(r => r.userId === me.id), km = runs.reduce((a, r) => a + Number(r.distance), 0);
+  const listings = (db?.listings || []).filter(l => me?.id && l.ownerId === me.id);
+  const runs = (db?.runs || []).filter(r => me?.id && r.userId === me.id), km = runs.reduce((a, r) => a + Number(r.distance || 0), 0);
   const stats = rental
     ? [[Smartphone, 'Total Device', mine.length, 'Kendaraan terpantau', 'blue'], [Wifi, 'Online', onlineN, 'Terhubung saat ini', 'green'], [Smartphone, 'Offline', offlineN, offlineN ? 'Perlu dicek' : 'Semua terhubung', offlineN ? 'red' : 'green'], [BatteryMedium, 'Baterai Rendah', lowBat, lowBat ? 'Di bawah 20%' : 'Semua aman', lowBat ? 'orange' : 'green']]
-    : [[Smartphone, 'Device Saya', mine.length, 'Dipakai sendiri', 'blue'], [Footprints, 'Sesi Running', runs.length, 'Total aktivitas', 'violet'], [Navigation, 'Total Jarak', `${km.toFixed(1)} km`, 'Semua sesi', 'green'], [BatteryMedium, 'Baterai', bat(mine[0]), 'Device utama', 'orange']];
+    : [[Smartphone, 'Device Saya', mine.length, 'Dipakai sendiri', 'blue'], [Footprints, 'Sesi Running', runs.length, 'Total aktivitas', 'violet'], [Navigation, 'Total Jarak', `${Math.round(km * 1000).toLocaleString('id-ID')} m`, 'Semua sesi', 'green'], [BatteryMedium, 'Baterai', bat(mine[0]), 'Device utama', 'orange']];
   const mapSub = !mine.length ? 'Belum ada device' : rental ? `${located} dari ${mine.length} device tampil di peta` : (place.text || mine[0].location || 'Menunggu data GPS');
   const pick = id => setView(id);
   const center = id => { setView(null); setFocus({ id, n: Date.now() }); }; // tutup modal lalu pusatkan peta dashboard
@@ -151,19 +169,30 @@ export function UserDevices() {
   const findDev = mine.find(d => d.id === find);
   return <>
     {mine.length === 0 && <Empty title="Belum ada device" text="Device dihubungkan oleh administrator setelah pembelian." />}
-    {mine.map(d => <div className="device-hero panel" key={d.id} style={{ marginBottom: 14 }}><div className="device-hero-icon"><Smartphone size={28} /></div>
-      <div className="device-hero-info">
-        <div className="title-with-badge">
-          <h2>{d.label}</h2>
-          <Badge tone={d.online ? 'green' : 'red'}>{d.online ? 'Online' : 'Offline'}</Badge>
+    {mine.map(d => (
+      <div className="device-hero panel" key={d.id} style={{ marginBottom: 14 }}>
+        <div className="device-hero-top">
+          <div className="device-hero-icon"><Smartphone size={28} /></div>
+          <div className="device-hero-info">
+            <div className="title-with-badge">
+              <h2>{d.label}</h2>
+              <Badge tone={d.online ? 'green' : 'red'}>{d.online ? 'Online' : 'Offline'}</Badge>
+            </div>
+            <p>{d.code}{d.alias ? ` · ${d.name}` : ''} · GPS Tracker · Terhubung ke akun Anda</p>
+            {d.notes && <p className="device-desc">{d.notes}</p>}
+            <div className="hero-meta">
+              <span><Wifi size={14} /> {d.online ? 'Terhubung' : 'Terputus'}</span>
+              <span><Navigation size={14} /> GPS {d.gps}</span>
+              <span><BatteryMedium size={14} /> Baterai {bat(d)}</span>
+            </div>
+          </div>
         </div>
-        <p>{d.code}{d.alias ? ` · ${d.name}` : ''} · GPS Tracker · Terhubung ke akun Anda</p>
-        {d.notes && <p className="device-desc">{d.notes}</p>}
-        <div className="hero-meta"><span><Wifi size={14} /> {d.online ? 'Terhubung' : 'Terputus'}</span><span><Navigation size={14} /> GPS {d.gps}</span><span><BatteryMedium size={14} /> Baterai {bat(d)}</span></div></div>
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        <Button icon={LocateFixed} onClick={() => setFind(d.id)}>Temukan Alat Saya</Button>
-        <Button variant="outline" icon={Pencil} onClick={() => setEdit(d.id)}>Edit Alias</Button>
-      </div></div>)}
+        <div className="device-hero-actions">
+          <Button icon={LocateFixed} onClick={() => setFind(d.id)}>Temukan Alat Saya</Button>
+          <Button variant="outline" icon={Pencil} onClick={() => setEdit(d.id)}>Edit Alias</Button>
+        </div>
+      </div>
+    ))}
     {findDev && <DeviceLocationModal key={find} deviceId={find} title={`Temukan ${findDev.label}`} onClose={() => setFind(null)} onEdit={id => { setFind(null); setEdit(id); }} />}
     {edit && <EditIdentityModal key={edit} deviceId={edit} onClose={() => setEdit(null)} />}
   </>;
@@ -173,8 +202,8 @@ export function UserDevices() {
 export function UserLocation({ tab }) {
   const { me, mine: raw, db } = useMine();
   const mine = useLivePositions(raw);
-  const runs = me.mode === 'Running' ? db.runs.filter(r => r.userId === me.id) : [];
-  return <LocationPage devices={mine} tab={tab} extra={[{ id: 'jalur', label: 'Riwayat Jalur', icon: Route, render: d => <TrackTab d={d} runs={runs} mode={me.mode} /> }]} />;
+  const runs = me?.mode === 'Running' ? (db?.runs || []).filter(r => me?.id && r.userId === me.id) : [];
+  return <LocationPage devices={mine} tab={tab} extra={[{ id: 'jalur', label: 'Riwayat Jalur', icon: Route, render: d => <TrackTab d={d} runs={runs} mode={me?.mode || 'Rental'} /> }]} />;
 }
 
 // Halaman Device Saya: langsung menampilkan perangkat (tab Pembelian dihapus)
@@ -185,35 +214,53 @@ export function UserDevice() {
 // Komponen listing/sewa (Rental, RentalHistory) dihapus. User Rental sekarang fokus
 // pada pelacakan lokasi kendaraan lewat Dashboard (peta besar) dan halaman Device Saya.
 
-// ================= MODE RUNNING (hijau, metrik & kontrol lari) =================
+// ================= MODE RUNNING (hijau, metrik & kontrol lari IoT GioT) =================
 export function Running() {
-  const { me, mine: raw, saveRun } = useMine();
+  const { me, mine: raw, saveRun, startTrackingSession, stopTrackingSession, checkDeviceCommand } = useMine();
   const mine = useLivePositions(raw), dev = mine[0];
-  const storageKey = `geotrack:running:${me.id}`;
+  const storageKey = `geotrack:running:${me?.id || 'anon'}`;
   const [session, setSession] = useState(() => {
     try {
       const saved = JSON.parse(localStorage.getItem(storageKey) || 'null');
       if (saved && ['run', 'pause'].includes(saved.state) && Array.isArray(saved.track)
         && saved.track.every(point => Array.isArray(point) && validCoord(point[0], point[1]))
         && Number.isFinite(saved.elapsedMs) && typeof saved.startedAt === 'string'
-        && (saved.state !== 'run' || Number.isFinite(saved.runningSince))) return saved;
+        && (saved.state !== 'run' || Number.isFinite(saved.runningSince))) {
+        if (saved.elapsedMs > 86400 * 1000 || saved.elapsedMs < 0) {
+          console.warn('Membersihkan sesi lari yang korup dari versi sebelumnya');
+          return null;
+        }
+        return saved;
+      }
       return null;
     } catch (error) {
       console.error('Gagal memulihkan sesi running:', error);
       return null;
     }
   });
-  const [now, setNow] = useState(0), [gpsStatus, setGpsStatus] = useState('Mencari GPS'), [gpsError, setGpsError] = useState('');
+
+  const [now, setNow] = useState(0);
+  const [checkingEsp, setCheckingEsp] = useState(false);
+  const [espGuardModal, setEspGuardModal] = useState(null);
+
   const state = session?.state || 'idle', track = session?.track || [];
-  const currentTime = now || session?.runningSince || 0;
-  const sec = Math.floor(((session?.elapsedMs || 0) + (state === 'run' ? currentTime - session.runningSince : 0)) / 1000);
-  const km = session?.finishKm ?? null;
-  const dist = pathKm(track), paceMin = dist > 0.01 ? sec / 60 / dist : null;
-  const locationSetupError = !window.isSecureContext
-    ? 'GPS browser hanya bisa digunakan lewat HTTPS atau localhost.'
-    : !navigator.geolocation
-      ? 'Browser ini tidak mendukung GPS.'
-      : '';
+  const activeElapsed = (state === 'run' && session?.runningSince && now > session.runningSince)
+    ? Math.max(0, now - session.runningSince)
+    : 0;
+  const totalMs = Math.max(0, Math.min(86400 * 1000, (session?.elapsedMs || 0) + activeElapsed));
+  const sec = Math.floor(totalMs / 1000);
+  const dist = pathKm(track);
+  const distMeters = Math.round(dist * 1000);
+  const paceMin = dist > 0.01 ? (sec / 60) / dist : null;
+
+  // Status sinyal GPS dari perangkat IoT GioT
+  const espGpsStatus = !dev
+    ? 'Belum ada alat'
+    : !dev.online
+      ? 'GioT Offline'
+      : dev.satellites != null && dev.satellites < 4
+        ? `Sinyal lemah (${dev.satellites} sat)`
+        : `Aktif (${dev.satellites ?? '—'} sat)`;
 
   useEffect(() => {
     try {
@@ -226,118 +273,592 @@ export function Running() {
 
   useEffect(() => {
     if (state !== 'run') return undefined;
+    setNow(Date.now());
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, [state]);
 
+  // Rekam titik koordinat live dari perangkat IoT GioT saat sesi berjalan
   useEffect(() => {
-    if (state !== 'run' || locationSetupError) return undefined;
+    if (state !== 'run' || !dev?.lat || !dev?.lng) return;
+    if (!validCoord(dev.lat, dev.lng)) return;
+    const point = [dev.lat, dev.lng, dev.time || new Date().toISOString()];
+    setSession(current => {
+      if (!current || current.state !== 'run') return current;
+      const currentTrack = current.track || [];
+      const prev = currentTrack[currentTrack.length - 1];
+      if (prev && haversineKm(prev, point) < 0.003) return current;
+      return { ...current, track: [...currentTrack, point] };
+    });
+  }, [state, dev?.lat, dev?.lng]);
 
-    const watchId = navigator.geolocation.watchPosition(
-      ({ coords }) => {
-        if (!validCoord(coords.latitude, coords.longitude)) return;
-        if (coords.accuracy > 100) {
-          setGpsStatus('Mencari sinyal');
-          return;
-        }
-        setGpsStatus('GPS aktif');
-        setGpsError('');
-        const point = [coords.latitude, coords.longitude];
+  // Sinkronisasi data GPS dari Supabase secara berkala (termasuk data offline yang baru di-upload dari SD card!)
+  useEffect(() => {
+    if (state !== 'run' || !dev?.id || !session?.startedAt || !supabase) return;
+
+    let cancel = false;
+    const syncFromCloud = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('gps_data')
+          .select('latitude, longitude, recorded_at')
+          .eq('device_id', dev.id)
+          .gte('recorded_at', session.startedAt)
+          .order('recorded_at', { ascending: true })
+          .limit(2000);
+
+        if (cancel || error || !Array.isArray(data) || !data.length) return;
+
+        const pts = data
+          .filter(d => validCoord(d.latitude, d.longitude))
+          .map(d => [Number(d.latitude), Number(d.longitude), d.recorded_at]);
+
+        if (!pts.length) return;
+
         setSession(current => {
           if (!current || current.state !== 'run') return current;
-          const previous = current.track[current.track.length - 1];
-          if (previous && haversineKm(previous, point) < Math.max(0.005, coords.accuracy / 2000)) return current;
-          return { ...current, track: [...current.track, point] };
-        });
-      },
-      error => {
-        setGpsStatus('GPS bermasalah');
-        setGpsError(error.code === 1
-          ? 'Izin lokasi ditolak. Izinkan akses lokasi untuk GeoTrack di pengaturan browser.'
-          : error.code === 2
-            ? 'Lokasi tidak tersedia. Pastikan GPS perangkat aktif dan coba di area terbuka.'
-            : 'GPS belum merespons. Pastikan izin lokasi aktif dan coba lagi.');
-      },
-      { enableHighAccuracy: true, maximumAge: 1000, timeout: 20000 }
-    );
-    return () => navigator.geolocation.clearWatch(watchId);
-  }, [state, locationSetupError]);
+          const curTrack = current.track || [];
 
-  const begin = () => {
+          const merged = [];
+          for (const p of pts) {
+            const prev = merged[merged.length - 1];
+            if (!prev || haversineKm(prev, p) >= 0.002) {
+              merged.push(p);
+            }
+          }
+
+          const curLast = curTrack[curTrack.length - 1];
+          if (curLast && (!merged.length || haversineKm(merged[merged.length - 1], curLast) >= 0.002)) {
+            merged.push(curLast);
+          }
+
+          if (merged.length > curTrack.length) {
+            return { ...current, track: merged };
+          }
+          return current;
+        });
+      } catch (err) {
+        console.warn('Gagal sync titik gps dari cloud:', err);
+      }
+    };
+
+    syncFromCloud();
+    const interval = setInterval(syncFromCloud, 3500);
+    return () => {
+      cancel = true;
+      clearInterval(interval);
+    };
+  }, [state, dev?.id, session?.startedAt]);
+
+  const startRunLocally = (targetDev, backendSessionId = null) => {
     const timestamp = Date.now();
     setNow(timestamp);
-    setGpsStatus(locationSetupError ? 'GPS tidak tersedia' : 'Mencari GPS');
-    setGpsError('');
     if (session) {
-      setSession({ ...session, state: 'run', runningSince: timestamp, finishKm: null });
+      setSession({
+        ...session,
+        state: 'run',
+        runningSince: timestamp,
+        backendSessionId: backendSessionId || session.backendSessionId,
+        finishMeters: null,
+        finishKm: null
+      });
       return;
     }
-    setSession({ state: 'run', elapsedMs: 0, runningSince: timestamp, startedAt: new Date(timestamp).toISOString(), track: [], finishKm: null });
+
+    const initialTrack = (targetDev?.lat && targetDev?.lng && validCoord(targetDev.lat, targetDev.lng))
+      ? [[targetDev.lat, targetDev.lng, targetDev.time || new Date(timestamp).toISOString()]]
+      : [];
+
+    setSession({
+      state: 'run',
+      elapsedMs: 0,
+      runningSince: timestamp,
+      startedAt: new Date(timestamp).toISOString(),
+      finishedAt: null,
+      track: initialTrack,
+      backendSessionId: backendSessionId || null,
+      finishMeters: null,
+      finishKm: null
+    });
   };
+
+  const begin = async (forceOffline = false) => {
+    if (!dev) {
+      setEspGuardModal({
+        title: 'Perangkat GPS Belum Tersedia',
+        message: 'Tidak ada perangkat GioT yang terhubung ke akun Anda. Buka menu Device Saya untuk mendaftarkan atau mengaitkan alat GPS Anda.',
+        allowOffline: false
+      });
+      return;
+    }
+
+    if (forceOffline) {
+      setEspGuardModal(null);
+      startRunLocally(dev);
+      return;
+    }
+
+    setCheckingEsp(true);
+    setEspGuardModal(null);
+
+    try {
+      const res = await startTrackingSession(dev.id);
+      const commandId = res?.ok && res?.data?.command_id;
+      const backendSessionId = res?.ok && res?.data?.session_id;
+
+      let espResponded = !!dev.online;
+
+      if (!espResponded && commandId) {
+        for (let i = 0; i < 4; i++) {
+          await new Promise(r => setTimeout(r, 800));
+          const cmd = await checkDeviceCommand(commandId);
+          if (cmd && (cmd.status === 'acknowledged' || cmd.status === 'completed')) {
+            espResponded = true;
+            break;
+          }
+        }
+      }
+
+      setCheckingEsp(false);
+
+      if (!espResponded) {
+        setEspGuardModal({
+          title: 'GioT Belum Merespons',
+          message: 'Perangkat GioT belum memberikan respons perintah mulai. Pastikan alat sudah dinyalakan dan terhubung ke jaringan sebelum memulai sesi lari.',
+          allowOffline: true,
+          backendSessionId
+        });
+        return;
+      }
+
+      startRunLocally(dev, backendSessionId);
+    } catch (err) {
+      console.warn('Gagal cek respons GioT:', err);
+      setCheckingEsp(false);
+      setEspGuardModal({
+        title: 'GioT Belum Merespons',
+        message: 'Tidak dapat menjangkau perangkat GioT. Periksa apakah alat aktif dan terhubung ke jaringan.',
+        allowOffline: true
+      });
+    }
+  };
+
   const pause = () => {
     const timestamp = Date.now();
     setNow(timestamp);
-    setSession(current => current && ({
-      ...current,
-      state: 'pause',
-      elapsedMs: current.elapsedMs + Math.max(0, timestamp - current.runningSince),
-      runningSince: null
-    }));
+    setSession(current => {
+      if (!current || current.state !== 'run') return current;
+      const additionalElapsed = current.runningSince
+        ? Math.max(0, timestamp - current.runningSince)
+        : 0;
+      return {
+        ...current,
+        state: 'pause',
+        elapsedMs: Math.max(0, Math.min(86400 * 1000, (current.elapsedMs || 0) + additionalElapsed)),
+        runningSince: null
+      };
+    });
   };
-  const finish = () => {
+
+  const finish = async () => {
     const timestamp = Date.now();
+    const finishIso = new Date(timestamp).toISOString();
     setNow(timestamp);
-    setSession(current => current && ({
-      ...current,
-      state: 'pause',
-      elapsedMs: current.elapsedMs + Math.max(0, timestamp - current.runningSince),
-      runningSince: null,
-      finishKm: dist.toFixed(2)
-    }));
+
+    let finalTrack = track;
+    if (dev?.id && session?.startedAt && supabase) {
+      try {
+        const { data } = await supabase
+          .from('gps_data')
+          .select('latitude, longitude, recorded_at')
+          .eq('device_id', dev.id)
+          .gte('recorded_at', session.startedAt)
+          .order('recorded_at', { ascending: true })
+          .limit(2000);
+        if (Array.isArray(data) && data.length) {
+          const pts = data
+            .filter(d => validCoord(d.latitude, d.longitude))
+            .map(d => [Number(d.latitude), Number(d.longitude), d.recorded_at]);
+          if (pts.length >= finalTrack.length) {
+            finalTrack = pts;
+          }
+        }
+      } catch (e) { }
+    }
+
+    const finalDist = pathKm(finalTrack);
+    const finalMeters = Math.round(finalDist * 1000);
+
+    setSession(current => {
+      if (!current) return current;
+      const additionalElapsed = (current.state === 'run' && current.runningSince)
+        ? Math.max(0, timestamp - current.runningSince)
+        : 0;
+      return {
+        ...current,
+        state: 'pause',
+        elapsedMs: Math.max(0, Math.min(86400 * 1000, (current.elapsedMs || 0) + additionalElapsed)),
+        runningSince: null,
+        finishedAt: finishIso,
+        track: finalTrack,
+        finishMeters: finalMeters,
+        finishKm: finalDist.toFixed(2)
+      };
+    });
   };
+
   return <>
-    <ModeBanner mode="Running" title="Running Tracker" text="Rekam lari memakai GPS browser. Sesi aktif tetap tersimpan jika halaman dimuat ulang." />
-    <section className="panel mode-workspace"><Head title="Sesi Lari" sub={mine[0] ? mine[0].label : 'Belum ada device'} action={<Badge tone={state === 'run' ? 'green' : state === 'pause' ? 'orange' : 'gray'}>{state === 'run' ? 'Merekam' : state === 'pause' ? 'Dijeda' : 'Siap'}</Badge>} />
-      <div className="running-controls">
-        <div className="running-metric"><small>DURASI</small><strong>{hms(sec)}</strong></div>
-        <div className="running-metric"><small>JARAK</small><strong>{dist.toFixed(2)}<small> km</small></strong></div>
-        <div className="running-metric"><small>PACE</small><strong>{paceMin ? `${Math.floor(paceMin)}:${String(Math.round((paceMin % 1) * 60) % 60).padStart(2, '0')}` : '—'}<small> /km</small></strong></div>
-        <div className="running-metric"><small>GPS</small><strong className="gps-ready"><span /> {state === 'run' ? (locationSetupError ? 'GPS tidak tersedia' : gpsStatus) : state === 'pause' ? 'Dijeda' : 'Siap'}</strong></div>
+    <ModeBanner mode="Running" title="Running Tracker IoT" text="Pelacakan aktivitas lari secara real-time menggunakan modul GPS IoT GioT. Data otomatis tersinkron ke cloud." />
+    <section className="panel mode-workspace">
+      <Head
+        title="Sesi Lari IoT"
+        sub={mine[0] ? `${mine[0].label} (${mine[0].online ? 'Online' : 'Offline'})` : 'Belum ada device'}
+        action={<Badge tone={state === 'run' ? 'green' : state === 'pause' ? 'orange' : 'gray'}>{state === 'run' ? 'Merekam' : state === 'pause' ? 'Dijeda' : 'Siap'}</Badge>}
+      />
+      <div className="running-controls" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10 }}>
+        <div className="running-metric">
+          <small>JARAK</small>
+          <strong>{distMeters.toLocaleString('id-ID')}<small> m</small></strong>
+        </div>
+        <div className="running-metric">
+          <small>DURASI</small>
+          <strong>{hms(sec)}</strong>
+        </div>
+        <div className="running-metric">
+          <small>START ON</small>
+          <strong style={{ fontSize: 13 }}>{session?.startedAt ? fmtTime(session.startedAt) : '—'}</strong>
+        </div>
+        <div className="running-metric">
+          <small>FINISH ON</small>
+          <strong style={{ fontSize: 13 }}>{session?.finishedAt ? fmtTime(session.finishedAt) : (state === 'run' ? 'Merekam…' : state === 'pause' ? 'Dijeda' : '—')}</strong>
+        </div>
+        <div className="running-metric">
+          <small>PACE</small>
+          <strong>{paceMin ? `${Math.floor(paceMin)}:${String(Math.round((paceMin % 1) * 60) % 60).padStart(2, '0')}` : '—'}<small> /km</small></strong>
+        </div>
+        <div className="running-metric">
+          <small>GPS GioT</small>
+          <strong className="gps-ready"><span /> {state === 'run' ? espGpsStatus : state === 'pause' ? 'Dijeda' : (dev?.online ? 'GioT Siap' : 'GioT Offline')}</strong>
+        </div>
       </div>
-      {(locationSetupError || gpsError) && <p className="running-gps-error" role="status">{locationSetupError || gpsError}</p>}
       <div className="running-map"><MapPanel devices={dev ? [dev] : []} route={track} follow={state === 'run'} /></div>
       <div className="running-actions">
-        {state !== 'run' ? <Button icon={Play} onClick={begin}>{state === 'pause' ? 'Lanjutkan' : 'Mulai'}</Button> : <Button variant="outline" icon={Pause} onClick={pause}>Jeda</Button>}
-        {state !== 'idle' && <Button variant="danger" icon={Square} onClick={finish}>Selesai</Button>}
-      </div></section>
-    {km !== null && <Modal title="Simpan Aktivitas" onClose={() => setSession(current => current && ({ ...current, finishKm: null }))}><form className="modal-form" onSubmit={async e => { e.preventDefault(); if (await saveRun({ deviceId: dev?.id, distance: km, seconds: sec, route: track, startedAt: session.startedAt })) { setSession(null); } }}>
-      <Field label={`Jarak (km, dari GPS · bisa dikoreksi) · durasi ${hms(sec)}`}><input required type="number" step="0.01" min="0" value={km} onChange={e => setSession(current => current && ({ ...current, finishKm: e.target.value }))} /></Field>
-      <div className="modal-actions"><Button variant="outline" onClick={() => setSession(current => current && ({ ...current, finishKm: null }))}>Batal</Button><Button type="submit">Simpan</Button></div></form></Modal>}
+        {state !== 'run' ? (
+          <Button icon={Play} disabled={checkingEsp} onClick={() => begin(false)}>
+            {checkingEsp ? 'Menghubungi GioT…' : (state === 'pause' ? 'Lanjutkan' : 'Mulai Lari')}
+          </Button>
+        ) : (
+          <Button variant="outline" icon={Pause} onClick={pause}>Jeda</Button>
+        )}
+        {state === 'pause' && (
+          <Button variant="outline" icon={RotateCcw} onClick={() => setSession(null)}>
+            Reset
+          </Button>
+        )}
+        {state !== 'idle' && (
+          <Button variant="danger" icon={Square} onClick={finish}>Selesai</Button>
+        )}
+      </div>
+    </section>
+
+    {/* Modal Pengaman jika GioT belum merespons */}
+    {espGuardModal && (
+      <Modal
+        title={espGuardModal.title}
+        onClose={() => setEspGuardModal(null)}
+      >
+        <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', background: 'var(--bg-subtle, #f8fafc)', padding: 12, borderRadius: 8 }}>
+            <TriangleAlert size={28} color="#eab308" style={{ flexShrink: 0, marginTop: 2 }} />
+            <div>
+              <p style={{ margin: 0, fontWeight: 500, fontSize: 14 }}>{espGuardModal.message}</p>
+              {dev && (
+                <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text-muted, #64748b)', lineHeight: 1.6 }}>
+                  <div>• Alat: <b>{dev.label}</b> ({dev.code})</div>
+                  <div>• Status Alat: <b style={{ color: dev.online ? '#22c55e' : '#ef4444' }}>{dev.online ? 'Online' : 'Offline / Belum Aktif'}</b></div>
+                  <div>• Sinyal GPS Alat: <b>{dev.satellites != null ? `${dev.satellites} satelit` : 'Belum ada data'}</b></div>
+                  <div>• Baterai: <b>{bat(dev)}</b></div>
+                  <div>• Terakhir Aktif: <b>{dev.updated || 'Belum pernah'}</b></div>
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="modal-actions">
+            {espGuardModal.allowOffline && (
+              <Button
+                variant="outline"
+                small
+                onClick={() => begin(true)}
+              >
+                Tetap Mulai (Offline SD Card)
+              </Button>
+            )}
+            <Button
+              variant="outline"
+              onClick={() => setEspGuardModal(null)}
+            >
+              Batal
+            </Button>
+            <Button
+              icon={RefreshCw}
+              disabled={checkingEsp}
+              onClick={() => begin(false)}
+            >
+              {checkingEsp ? 'Menghubungi…' : 'Coba Hubungi Lagi'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+    )}
+
+    {/* Modal Simpan Aktivitas */}
+    {session?.finishMeters != null && (
+      <Modal title="Simpan Aktivitas Lari" onClose={() => setSession(current => current && ({ ...current, finishMeters: null }))}>
+        <form
+          className="modal-form"
+          onSubmit={async e => {
+            e.preventDefault();
+            const metersVal = Math.max(0, Number(session.finishMeters) || 0);
+            const safeDistanceKm = Math.max(0, Math.min(9999.99, Number((metersVal / 1000).toFixed(2))));
+            const safeSec = Math.max(0, Math.min(86400 * 30, Math.floor(Number(sec) || 0)));
+
+            if (session?.backendSessionId) {
+              await stopTrackingSession(session.backendSessionId);
+            }
+
+            if (await saveRun({
+              deviceId: dev?.id,
+              distance: safeDistanceKm,
+              seconds: safeSec,
+              route: session.track || track,
+              startedAt: session.startedAt,
+              stoppedAt: session.finishedAt || new Date().toISOString()
+            })) {
+              setSession(null);
+            }
+          }}
+        >
+          <div style={{ background: 'var(--bg-subtle, #f8fafc)', padding: 12, borderRadius: 8, fontSize: 13, display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div>• <b>Start On:</b> {fmtDateTime(session.startedAt)}</div>
+            <div>• <b>Finish On:</b> {fmtDateTime(session.finishedAt || new Date().toISOString())}</div>
+            <div>• <b>Durasi:</b> {hms(sec)}</div>
+            <div>• <b>Total Titik Rute:</b> {(session.track || track).length} titik GPS</div>
+          </div>
+          <Field label={`Jarak Ditempuh (meter, dari GPS IoT GioT)`}>
+            <input
+              required
+              type="number"
+              step="1"
+              min="0"
+              max="9999999"
+              value={session.finishMeters}
+              onChange={e => setSession(current => current && ({ ...current, finishMeters: e.target.value }))}
+            />
+          </Field>
+          <div className="modal-actions">
+            <Button variant="danger" onClick={() => setSession(null)}>Buang Sesi</Button>
+            <Button variant="outline" onClick={() => setSession(current => current && ({ ...current, finishMeters: null }))}>Batal</Button>
+            <Button type="submit">Simpan ke Riwayat</Button>
+          </div>
+        </form>
+      </Modal>
+    )}
   </>;
 }
 
 export function RunningHistory() {
   const { db, me, saveRun, deleteRun, askConfirm } = useStore();
   const [f, setF] = useState(null);
-  const rows = db.runs.filter(r => r.userId === me.id), km = rows.reduce((a, r) => a + Number(r.distance), 0);
-  const pace = r => { const m = secs(r.duration) / 60 / Math.max(Number(r.distance), 0.01); return `${Math.floor(m)}:${String(Math.round((m % 1) * 60)).padStart(2, '0')} /km`; };
+  const [viewRun, setViewRun] = useState(null);
+  const [shareRun, setShareRun] = useState(null);
+  const rows = (db?.runs || []).filter(r => me?.id && r.userId === me.id);
+  const totalMeters = rows.reduce((a, r) => a + Math.round(Number(r.distance || 0) * 1000), 0);
+  const pace = r => {
+    const distVal = Number(r.distance || 0);
+    const m = secs(r.duration || '0:0') / 60 / Math.max(distVal, 0.001);
+    return `${Math.floor(m)}:${String(Math.round((m % 1) * 60)).padStart(2, '0')} /km`;
+  };
+
   return <>
-    <div className="stats-strip"><span>Total sesi <b>{rows.length}</b></span><span>Total jarak <b>{km.toFixed(2)} km</b></span></div>
-    {rows.length === 0 ? <Empty title="Belum ada riwayat running" text="Mulai aktivitas dari menu Running." /> :
-      <section className="panel mode-workspace"><Head title="Aktivitas Saya" /><div className="vehicle-grid">{rows.map(r => <div className="vehicle-card" key={r.id}><div className="vehicle-icon bike"><Footprints size={20} /></div>
-        <div><b>{r.distance} km · {r.duration}</b><small>{r.date} · Pace {pace(r)}</small></div><Badge tone="green">Selesai</Badge>
-        <p>{r.note || 'Tanpa catatan'}</p>
-        <div style={{ gridColumn: '1/4', display: 'flex', gap: 8 }}><Button small variant="outline" icon={Pencil} onClick={() => setF(r)}>Catatan</Button><Button small variant="danger" icon={Trash2} onClick={() => askConfirm({ title: 'Hapus aktivitas?', text: 'Riwayat aktivitas lari ini akan dihapus permanen.', confirmText: 'Hapus aktivitas', danger: true, onConfirm: () => deleteRun(r.id) })}>Hapus</Button></div></div>)}</div></section>}
-    {f && <Modal title="Catatan Aktivitas" onClose={() => setF(null)}><form className="modal-form" onSubmit={async e => { e.preventDefault(); if (await saveRun(f)) setF(null); }}>
-      <Field label="Catatan"><input value={f.note} onChange={e => setF({ ...f, note: e.target.value })} /></Field>
-      <div className="modal-actions"><Button variant="outline" onClick={() => setF(null)}>Batal</Button><Button type="submit">Simpan</Button></div></form></Modal>}
+    <div className="stats-strip">
+      <span>Total sesi <b>{rows.length}</b></span>
+      <span>Total jarak <b>{totalMeters.toLocaleString('id-ID')} m</b></span>
+    </div>
+    {rows.length === 0 ? (
+      <Empty title="Belum ada riwayat running" text="Mulai aktivitas dari menu Running." />
+    ) : (
+      <section className="panel mode-workspace">
+        <Head title="Aktivitas Saya" />
+        <div className="vehicle-grid">
+          {rows.map(r => {
+            const meters = Math.round(Number(r.distance || 0) * 1000);
+            return (
+              <div className="vehicle-card" key={r.id}>
+                <div className="vehicle-icon bike"><Footprints size={20} /></div>
+                <div>
+                  <b>{meters.toLocaleString('id-ID')} m · {r.duration}</b>
+                  <small>Start: {fmtDateTime(r.startedAt)} · Pace {pace(r)}</small>
+                  {r.stoppedAt && (
+                    <small style={{ display: 'block', color: 'var(--text-muted, #64748b)' }}>
+                      Finish: {fmtDateTime(r.stoppedAt)}
+                    </small>
+                  )}
+                </div>
+                <Badge tone="green">Selesai</Badge>
+                <p>{r.note || 'Tanpa catatan'}</p>
+                <div style={{ gridColumn: '1/4', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <Button small variant="primary" icon={MapPin} onClick={() => setViewRun(r)}>
+                    Lihat Peta & Titik
+                  </Button>
+                  <Button
+                    small
+                    variant="outline"
+                    icon={Share}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShareRun(r);
+                    }}
+                  >
+                    Bagikan
+                  </Button>
+                  <Button small variant="outline" icon={Pencil} onClick={() => setF(r)}>
+                    Catatan
+                  </Button>
+                  <Button
+                    small
+                    variant="danger"
+                    icon={Trash2}
+                    onClick={() => askConfirm({
+                      title: 'Hapus aktivitas?',
+                      text: 'Riwayat aktivitas lari ini akan dihapus permanen.',
+                      confirmText: 'Hapus aktivitas',
+                      danger: true,
+                      onConfirm: () => deleteRun(r.id)
+                    })}
+                  >
+                    Hapus
+                  </Button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+    )}
+
+    {/* Modal Catatan Aktivitas */}
+    {f && (
+      <Modal title="Catatan Aktivitas" onClose={() => setF(null)}>
+        <form className="modal-form" onSubmit={async e => { e.preventDefault(); if (await saveRun(f)) setF(null); }}>
+          <Field label="Catatan">
+            <input value={f.note} onChange={e => setF({ ...f, note: e.target.value })} />
+          </Field>
+          <div className="modal-actions">
+            <Button variant="outline" onClick={() => setF(null)}>Batal</Button>
+            <Button type="submit">Simpan</Button>
+          </div>
+        </form>
+      </Modal>
+    )}
+
+    {/* Modal Lihat Peta & Semua Titik Riwayat */}
+    {viewRun && (
+      <Modal
+        title={`Riwayat Rute & Titik: ${Math.round(Number(viewRun.distance || 0) * 1000).toLocaleString('id-ID')} m`}
+        onClose={() => setViewRun(null)}
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {/* Metrik Utama Sesi */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: 8, background: 'var(--bg-subtle, #f8fafc)', padding: 10, borderRadius: 8 }}>
+            <div><small style={{ color: '#64748b', fontSize: 11 }}>JARAK</small><div style={{ fontWeight: 700, fontSize: 14 }}>{Math.round(Number(viewRun.distance || 0) * 1000).toLocaleString('id-ID')} m</div></div>
+            <div><small style={{ color: '#64748b', fontSize: 11 }}>DURASI</small><div style={{ fontWeight: 700, fontSize: 14 }}>{viewRun.duration}</div></div>
+            <div><small style={{ color: '#64748b', fontSize: 11 }}>PACE</small><div style={{ fontWeight: 700, fontSize: 14 }}>{pace(viewRun)}</div></div>
+            <div><small style={{ color: '#64748b', fontSize: 11 }}>TITIK GPS</small><div style={{ fontWeight: 700, fontSize: 14 }}>{Array.isArray(viewRun.route) ? viewRun.route.length : 0} titik</div></div>
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--text-muted, #64748b)', display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <div>• <b>Start On:</b> {fmtDateTime(viewRun.startedAt)}</div>
+            <div>• <b>Finish On:</b> {viewRun.stoppedAt ? fmtDateTime(viewRun.stoppedAt) : '—'}</div>
+            {viewRun.note && <div>• <b>Catatan:</b> {viewRun.note}</div>}
+          </div>
+
+          {/* Tampilan Peta Interaktif dengan Garis Biru */}
+          <div style={{ height: 320, width: '100%', borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border, #e2e8f0)' }}>
+            {Array.isArray(viewRun.route) && viewRun.route.length > 0 ? (
+              <MapPanel route={viewRun.route} />
+            ) : (
+              <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8' }}>
+                Tidak ada data koordinat rute untuk sesi ini
+              </div>
+            )}
+          </div>
+
+          {/* Rincian Cek Semua Titik dari Awal sampai Akhir */}
+          {Array.isArray(viewRun.route) && viewRun.route.length > 0 && (
+            <details style={{ fontSize: 12, border: '1px solid var(--border, #e2e8f0)', borderRadius: 6, padding: '8px 12px' }}>
+              <summary style={{ cursor: 'pointer', fontWeight: 600, color: '#2563eb' }}>
+                Cek Semua Titik Koordinat ({viewRun.route.length} titik dari awal hingga akhir)
+              </summary>
+              <div style={{ maxHeight: 180, overflowY: 'auto', marginTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {viewRun.route.map((pt, i) => {
+                  const isStart = i === 0;
+                  const isFinish = i === viewRun.route.length - 1;
+                  return (
+                    <div
+                      key={i}
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        padding: '5px 8px',
+                        background: isStart ? '#dcfce7' : isFinish ? '#fee2e2' : i % 2 === 0 ? '#f8fafc' : '#ffffff',
+                        borderRadius: 4
+                      }}
+                    >
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <b>#{i + 1}</b>
+                        <span>{isStart ? '🟢 Start' : isFinish ? '🔴 Finish' : 'Titik'}</span>
+                        {pt[2] && (
+                          <span style={{ fontSize: 11, color: '#475569', background: '#e2e8f0', padding: '1px 6px', borderRadius: 4 }}>
+                            {fmtTime(pt[2])}
+                          </span>
+                        )}
+                      </span>
+                      <span style={{ fontFamily: 'monospace', fontSize: 11, color: '#334155' }}>
+                        {Number(pt[0]).toFixed(6)}, {Number(pt[1]).toFixed(6)}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </details>
+          )}
+
+          <div className="modal-actions" style={{ display: 'flex', gap: 8 }}>
+            <Button variant="primary" icon={Share} onClick={() => setShareRun(viewRun)}>
+              Bagikan Aktivitas
+            </Button>
+            <Button variant="outline" onClick={() => setViewRun(null)}>
+              Tutup
+            </Button>
+          </div>
+        </div>
+      </Modal>
+    )}
+
+    {/* Modal / Bottom Sheet Bagikan Aktivitas (Share Activity) */}
+    {shareRun && (
+      <ShareActivityModal
+        run={shareRun}
+        onClose={() => setShareRun(null)}
+      />
+    )}
   </>;
 }
 
 export function Service() {
   const { db, me, sendTicket } = useStore();
   const [f, setF] = useState({ category: 'Baterai', title: '', detail: '' });
-  const mine = db.tickets.filter(t => t.userId === me.id);
+  const mine = (db?.tickets || []).filter(t => me?.id && t.userId === me.id);
   return <div className="service-layout"><div>
     <section className="panel service-form-panel" style={{ marginBottom: 16 }}><Head title="Kirim Pengaduan" sub="Admin akan menanggapi secepatnya" />
       <form className="form-grid" onSubmit={async e => { e.preventDefault(); if (await sendTicket(f)) setF({ ...f, title: '', detail: '' }); }}>
@@ -353,19 +874,12 @@ export function Service() {
 
 export function Notifications() {
   const { db, me } = useStore();
-  const admin = me.role === 'admin';
-  const mineIds = db.devices.filter(d => d.ownerId === me.id).map(d => d.id);
-  const usersById = new Map(db.users.map(user => [user.id, user]));
+  const admin = me?.role === 'admin';
+  const mineIds = (db?.devices || []).filter(d => me?.id && d.ownerId === me.id).map(d => d.id);
   const items = [
-    ...db.devices.filter(d => d.battery != null && d.battery < 20 && (admin || mineIds.includes(d.id))).map(d => ({
-      k: 'b' + d.id, tone: 'red', icon: BatteryMedium, t: 'Baterai rendah',
-      p: `${d.label} tersisa ${d.battery}%.`, mode: admin ? usersById.get(d.ownerId)?.mode : null,
-    })),
-    ...(admin ? db.tickets.filter(t => t.status === 'Baru').map(t => ({
-      k: t.id, tone: 'orange', icon: Bell, t: 'Pengaduan baru', p: t.title,
-      mode: usersById.get(t.userId)?.mode,
-    }))
-      : db.tickets.filter(t => t.userId === me.id && t.reply).map(t => ({ k: t.id, tone: 'blue', icon: ShieldCheck, t: 'Pengaduan ditanggapi', p: t.reply }))),
+    ...(db?.devices || []).filter(d => d.battery != null && d.battery < 20 && (admin || mineIds.includes(d.id))).map(d => ({ k: 'b' + d.id, tone: 'red', icon: BatteryMedium, t: 'Baterai rendah', p: `${d.label} tersisa ${d.battery}%.` })),
+    ...(admin ? (db?.tickets || []).filter(t => t.status === 'Baru').map(t => ({ k: t.id, tone: 'orange', icon: Bell, t: 'Pengaduan baru', p: t.title }))
+      : (db?.tickets || []).filter(t => me?.id && t.userId === me.id && t.reply).map(t => ({ k: t.id, tone: 'blue', icon: ShieldCheck, t: 'Pengaduan ditanggapi', p: t.reply }))),
   ];
   return <><div className="notification-head"><div><h2>Notifikasi</h2><p>{items.length} pemberitahuan</p></div></div>
     <div className="notification-list">{items.length === 0 && <Empty title="Tidak ada notifikasi" text="Semua aman." />}
@@ -378,4 +892,9 @@ export const RunningPage = ({ tab }) => <Tabs initial={tab} tabs={[
   { id: 'riwayat', label: 'Riwayat', icon: History, node: <RunningHistory /> },
 ]} />;
 
-export const Help = () => <Service />;
+export const Help = ({ tab }) => <Tabs initial={tab} tabs={[
+  { id: 'bantuan', label: 'Pengaduan', icon: MessageSquare, node: <Service /> },
+  { id: 'notif', label: 'Notifikasi', icon: Bell, node: <Notifications /> },
+]} />;
+
+export { DebugPage } from './debug.jsx';

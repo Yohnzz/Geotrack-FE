@@ -7,6 +7,10 @@ pnpm-debug.log*
 lerna-debug.log*
 esp32/
 
+# Mobile native platforms (Capacitor)
+android/
+ios/
+
 
 node_modules/
 

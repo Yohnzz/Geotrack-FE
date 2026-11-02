@@ -3,6 +3,7 @@ import { MapContainer, TileLayer, Marker, Popup, Polyline, CircleMarker, Circle,
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { validCoord } from './services/geo.js';
+import { fmtTime } from './services/gpsService.js';
 
 // divIcon dipakai agar tidak bergantung pada file gambar marker bawaan Leaflet (bermasalah di Vite)
 const pin = online => L.divIcon({
@@ -64,15 +65,32 @@ export default function RealMap({ devices = [], route = [], follow = false, poin
   const last = points.length - 1;
   return <MapContainer center={pts[0] || [-2.5, 118]} zoom={pts[0] ? 13 : 5} scrollWheelZoom style={{ height: '100%', width: '100%' }}>
     <TileLayer attribution='&copy; OpenStreetMap' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-    {route.length > 1 && <Polyline positions={route} pathOptions={{ color: '#2563eb', weight: 4 }} />}
-    {route.length > 0 && <CircleMarker center={route[route.length - 1]} radius={7}
-      pathOptions={{ color: '#fff', weight: 2, fillColor: '#2563eb', fillOpacity: 1 }}>
-      <Tooltip direction="top" offset={[0, -8]}>Posisi GPS saat ini</Tooltip></CircleMarker>}
-    {trace.length > 1 && <Polyline positions={trace} pathOptions={{ color: '#60a5fa', weight: 3, opacity: 0.8 }} />}
+    {route.length > 1 && <Polyline positions={route} pathOptions={{ color: '#2563eb', weight: 4, opacity: 0.9, lineJoin: 'round', lineCap: 'round' }} />}
+    {route.length > 1 && <CircleMarker center={route[0]} radius={8}
+      pathOptions={{ color: '#fff', weight: 2.5, fillColor: '#16a34a', fillOpacity: 1 }}>
+      <Tooltip direction="top" offset={[0, -8]}>
+        Titik Awal (Start){route[0]?.[2] ? ` • ${fmtTime(route[0][2])}` : ''}
+      </Tooltip></CircleMarker>}
+    {route.length > 0 && <CircleMarker center={route[route.length - 1]} radius={8}
+      pathOptions={{ color: '#fff', weight: 2.5, fillColor: follow ? '#2563eb' : '#dc2626', fillOpacity: 1 }}>
+      <Tooltip direction="top" offset={[0, -8]}>
+        {follow ? 'Posisi GPS saat ini' : 'Titik Akhir (Finish)'}{route[route.length - 1]?.[2] ? ` • ${fmtTime(route[route.length - 1][2])}` : ''}
+      </Tooltip></CircleMarker>}
+    {route.length > 2 && route.length <= 500 && route.slice(1, -1).map((pt, i) => (
+      <CircleMarker key={`rp-${i}`} center={pt} radius={3.5}
+        pathOptions={{ color: '#fff', weight: 1.5, fillColor: '#2563eb', fillOpacity: 0.95 }}>
+        <Tooltip direction="top" offset={[0, -6]}>
+          Titik #{i + 2}{pt[2] ? ` • ${fmtTime(pt[2])}` : ''}
+        </Tooltip>
+      </CircleMarker>
+    ))}
+    {trace.length > 1 && <Polyline positions={trace} pathOptions={{ color: '#2563eb', weight: 4, opacity: 0.9, lineJoin: 'round', lineCap: 'round' }} />}
     {points.map((p, i) => {
-      const edge = i === 0 ? '#16a34a' : i === last ? '#ea580c' : '#2563eb';
-      return <CircleMarker key={p.id} center={[p.lat, p.lng]} radius={i === 0 || i === last ? 7 : 5}
-        pathOptions={{ color: '#fff', weight: 2, fillColor: edge, fillOpacity: 1 }} eventHandlers={{ click: () => onSelect?.(p.id) }} />;
+      const edge = i === 0 ? '#16a34a' : i === last ? '#dc2626' : '#2563eb';
+      return <CircleMarker key={p.id} center={[p.lat, p.lng]} radius={i === 0 || i === last ? 8 : 4.5}
+        pathOptions={{ color: '#fff', weight: 2, fillColor: edge, fillOpacity: 1 }} eventHandlers={{ click: () => onSelect?.(p.id) }}>
+        <Tooltip direction="top" offset={[0, -6]}>{i === 0 ? 'Titik Awal (Start)' : i === last ? 'Titik Akhir (Finish)' : `Titik #${p.n || i + 1}`}</Tooltip>
+      </CircleMarker>;
     })}
     {sel && <CircleMarker key={'sel' + sel.id} center={[sel.lat, sel.lng]} radius={11} pathOptions={{ color: '#f59e0b', weight: 3, fillColor: '#fde68a', fillOpacity: 0.9 }}>
       <Tooltip permanent direction="top" offset={[0, -10]}>Titik {sel.n} · {sel.at}</Tooltip></CircleMarker>}

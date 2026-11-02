@@ -102,11 +102,12 @@ create table public.runs (
   id               uuid primary key default gen_random_uuid(),
   user_id          uuid not null references public.profiles(id) on delete cascade,
   device_id        uuid references public.devices(id) on delete set null,
-  distance_km      numeric(8,2) not null default 0 check (distance_km >= 0),
-  duration_seconds int not null default 0 check (duration_seconds >= 0),
+  distance_km      numeric(10,2) not null default 0 check (distance_km >= 0),
+  duration_seconds bigint not null default 0 check (duration_seconds >= 0),
   note             text,
   route            jsonb not null default '[]'::jsonb,
   started_at       timestamptz not null default now(),
+  stopped_at       timestamptz,
   created_at       timestamptz not null default now()
 );
 create index runs_user_idx on public.runs (user_id, started_at desc);

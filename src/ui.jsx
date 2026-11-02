@@ -9,8 +9,8 @@ export const Stat = ({ icon: I, label, value, detail, tone = 'blue' }) =>
 export const Empty = ({ title, text }) => <div className="empty-state"><div className="empty-icon"><Database size={23} /></div><h3>{title}</h3><p>{text}</p></div>;
 export const Panel = ({ title, sub, action, children }) =>
   <section className="panel section-spaced"><div className="panel-heading"><div><h3>{title}</h3>{sub && <p>{sub}</p>}</div>{action}</div>{children}</section>;
-export const Modal = ({ title, onClose, children, compact = false, wide = false }) =>
-  <div className="modal-backdrop" onMouseDown={e => e.target === e.currentTarget && onClose()}><div className={`modal-card ${compact ? 'modal-compact' : ''} ${wide ? 'modal-wide' : ''}`}>
+export const Modal = ({ title, onClose, children, compact = false, wide = false, className = '' }) =>
+  <div className="modal-backdrop" onMouseDown={e => e.target === e.currentTarget && onClose()}><div className={`modal-card ${compact ? 'modal-compact' : ''} ${wide ? 'modal-wide' : ''} ${className}`}>
     <div className="modal-head"><div><h3>{title}</h3><p>GeoTrack</p></div><button className="icon-button" onClick={onClose}><X size={18} /></button></div>{children}</div></div>;
 export const Field = ({ label, children }) => <label>{label}{children}</label>;
 export const ConfirmModal = ({ title = 'Konfirmasi tindakan', text, confirmText = 'Lanjutkan', onClose, onConfirm, danger = false }) =>
